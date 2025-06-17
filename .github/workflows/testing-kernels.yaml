@@ -41,12 +41,23 @@ jobs:
         - name: Configure and build kernel
           run: |
             cd linux-${{ matrix.kernel-version }}
-            make defconfig
-            echo 'CONFIG_NETFILTER_ADVANCED=y' >> myoptions.config
-            echo 'CONFIG_BRIDGE=y' >> myoptions.config
-            echo 'CONFIG_BRIDGE_NETFILTER=y' >> myoptions.config
-            echo 'CONFIG_NF_CONNTRACK_EVENTS=y' >> myoptions.config
-            ./scripts/kconfig/merge_config.sh .config myoptions.config
+            make tinyconfig
+            ./scripts/config --enable CONFIG_X86_64
+            ./scripts/config --enable CONFIG_NET
+            ./scripts/config --enable CONFIG_INET
+            ./scripts/config --enable CONFIG_IPV6
+            ./scripts/config --enable CONFIG_NETFILTER
+            ./scripts/config --enable CONFIG_BRIDGE
+            ./scripts/config --enable CONFIG_BRIDGE_NETFILTER
+            ./scripts/config --enable CONFIG_NETFILTER_ADVANCED
+            ./scripts/config --enable CONFIG_NF_CONNTRACK
+            ./scripts/config --enable CONFIG_NF_CONNTRACK_EVENTS
+            ./scripts/config --enable CONFIG_MODULES
+            ./scripts/config --enable CONFIG_SYSCTL
+            ./scripts/config --enable CONFIG_PROC_FS
+            ./scripts/config --enable CONFIG_NF_NAT
+            ./scripts/config --enable CONFIG_IP6_NF_IPTABLES
+            make olddefconfig
             make -j$(nproc)
             cd ..
         - name: Build ipt-netflow
