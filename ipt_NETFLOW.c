@@ -215,6 +215,11 @@ static DEFINE_SPINLOCK(snmp_lock);
 static int natevents = 0;
 module_param(natevents, int, 0444);
 MODULE_PARM_DESC(natevents, "enable NAT Events");
+
+static int __read_mostly nfevents_limit = 10000;
+module_param(nfevents_limit, int, 0444);
+MODULE_PARM_DESC(nfevents_limit, "Limit NAT events processed at once");
+
 #endif
 
 static int hashsize;
@@ -4486,15 +4491,19 @@ static int netflow_scan_and_export(const int flush)
 	}
 
 #ifdef CONFIG_NF_NAT_NEEDED
+	int max_nat_events = nf_events_max;
 	spin_lock_bh(&nat_lock);
 	list_splice_init(&nat_list, &nat_list_export);
 	spin_unlock_bh(&nat_lock);
-	while (!list_empty(&nat_list_export)) {
+	while (!list_empty(&nat_list_export) && max_nat_events--) {
 		struct nat_event *nel;
 
 		nel = list_first_entry(&nat_list_export, struct nat_event, list);
 		list_del(&nel->list);
 		export_nat_event(nel);
+	}
+	if (unlikely(max_nat_events <= 0)) {
+		printk(KERN_WARNING "ipt_NETFLOW: too many NAT events, some might be lost.\n");
 	}
 #endif
 	/* flush flows stored in pdu if there no new flows for too long */
