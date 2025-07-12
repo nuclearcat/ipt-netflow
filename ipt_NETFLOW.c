@@ -90,9 +90,7 @@
 /* No conntrack events in the kernel imply no natevents. */
 # undef CONFIG_NF_NAT_NEEDED
 #endif
-#if defined(CONFIG_NF_NAT_NEEDED) && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
-# include <net/netfilter/nf_conntrack_timestamp.h>
-#endif
+#include <net/netfilter/nf_conntrack_timestamp.h>
 #if !IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 # ifdef ENABLE_PHYSDEV_OVER
 #  warning "Requested physdev override is not compiled."
@@ -312,13 +310,8 @@ static void (*netflow_export_flow)(struct ipt_netflow *nf);
 static void (*netflow_export_pdu)(void); /* called on timeout */
 static void netflow_switch_version(int ver);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-static void netflow_work_fn(void *work);
-static DECLARE_WORK(netflow_work, netflow_work_fn, NULL);
-#else
 static void netflow_work_fn(struct work_struct *work);
 static DECLARE_DELAYED_WORK(netflow_work, netflow_work_fn);
-#endif
 static struct timer_list rate_timer;
 
 #define TCP_SYN_ACK 0x12
@@ -403,11 +396,7 @@ static inline void cont_scan_worker(void)
 
 static inline void _unschedule_scan_worker(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-	cancel_rearming_delayed_work(&netflow_work);
-#else
 	cancel_delayed_work_sync(&netflow_work);
-#endif
 }
 
 /* This is only used for quick pause (in procctl). */
@@ -447,42 +436,7 @@ static inline unsigned short sampler_nf_v5(void)
 /* return value is different from usual snprintf */
 static char *snprintf_sockaddr(char *buf, size_t len, const struct sockaddr_storage *ss)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-	if (ss->ss_family == AF_INET) {
-		const struct sockaddr_in *sin = (struct sockaddr_in *)ss;
-
-		snprintf(buf, len, "%u.%u.%u.%u:%u",
-		    NIPQUAD(sin->sin_addr.s_addr),
-		    ntohs(sin->sin_port));
-	} else if (ss->ss_family == AF_INET6) {
-		const struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ss;
-
-		snprintf(buf, len, "[%x:%x:%x:%x:%x:%x:%x:%x]:%u",
-		    ntohs(sin6->sin6_addr.s6_addr16[0]),
-		    ntohs(sin6->sin6_addr.s6_addr16[1]),
-		    ntohs(sin6->sin6_addr.s6_addr16[2]),
-		    ntohs(sin6->sin6_addr.s6_addr16[3]),
-		    ntohs(sin6->sin6_addr.s6_addr16[4]),
-		    ntohs(sin6->sin6_addr.s6_addr16[5]),
-		    ntohs(sin6->sin6_addr.s6_addr16[6]),
-		    ntohs(sin6->sin6_addr.s6_addr16[7]),
-		    ntohs(sin6->sin6_port));
-	} else
-		snprintf(buf, len, "(invalid address)");
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
-	if (ss->ss_family == AF_INET)
-		snprintf(buf, len, "%pI4:%u",
-		    &((const struct sockaddr_in *)ss)->sin_addr,
-		    ntohs(((const struct sockaddr_in *)ss)->sin_port));
-	else if (ss->ss_family == AF_INET6)
-		snprintf(buf, len, "[%pI6c]:%u",
-		    &((const struct sockaddr_in6 *)ss)->sin6_addr,
-		    ntohs(((const struct sockaddr_in6 *)ss)->sin6_port));
-	else
-		snprintf(buf, len, "(invalid address)");
-#else
 	snprintf(buf, len, "%pISpc", ss);
-#endif
 	return buf;
 }
 
