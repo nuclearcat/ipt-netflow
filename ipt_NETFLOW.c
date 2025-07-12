@@ -5299,6 +5299,8 @@ static void register_ct_events(void)
 	printk(KERN_INFO "ipt_NETFLOW: enable natevents.\n");
 	mutex_lock(&events_lock);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(5,11,0) || \
+		LINUX_VERSION_CODE < KERNEL_VERSION(5,9,0)
 	/* Pre-load netlink module who will be first notifier
 	 * user, and then hijack nf_conntrack_event_cb from it. */
 	if (
@@ -5307,11 +5309,18 @@ static void register_ct_events(void)
 		request_module(NETLINK_M);
 
 	}
+
 	/* Reference netlink module to prevent it's unsafe unload before us. */
 	if (!netlink_m && (netlink_m = find_module(NETLINK_M))) {
 		if (!try_module_get(netlink_m))
 			netlink_m = NULL;
 	}
+#else
+#pragma message "Conntrack events might not work with this kernel version."
+	printk(KERN_WARNING "ipt_NETFLOW: %s is not supported with this kernel version.\n", NETLINK_M);
+	netlink_m = NULL;
+#endif
+
 
 	/* Register ct events callback. */
 	register_pernet_subsys(&natevents_net_ops);
