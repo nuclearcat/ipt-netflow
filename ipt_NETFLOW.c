@@ -66,6 +66,7 @@
 # include <linux/notifier.h>
 # include <net/netfilter/nf_conntrack.h>
 # include <net/netfilter/nf_conntrack_core.h>
+# include <net/netfilter/nf_conntrack_acct.h>
 #endif
 #include <linux/version.h>
 
@@ -4211,7 +4212,18 @@ static void export_nat_event(struct nat_event *nel)
 		nf.tuple.dst.ip = nel->pre.d_addr;
 		nf.tuple.s_port = nel->pre.s_port;
 		nf.tuple.d_port = nel->pre.d_port;
+		nf.nr_packets = nel->orig_packets;
+		nf.nr_bytes = nel->orig_bytes;
 		netflow_export_flow(&nf);
+		if (nel->reply_packets > 0) {
+			nf.tuple.src.ip = nel->post.s_addr;
+			nf.tuple.dst.ip = nel->post.d_addr;
+			nf.tuple.s_port = nel->post.s_port;
+			nf.tuple.d_port = nel->post.d_port;
+			nf.nr_packets = nel->reply_packets;
+			nf.nr_bytes = nel->reply_bytes;
+			netflow_export_flow(&nf);
+		}
 	} else { /* v5 */
 		/* The weird v5 packet(s).
 		 * src and dst will be same as in data flow from the FORWARD chain
@@ -4232,6 +4244,9 @@ static void export_nat_event(struct nat_event *nel)
 			nf.nh.ip = nel->post.s_addr;
 			nf.s_as  = nel->post.s_port;
 			nf.d_as  = 0;
+			/* For SNAT, attribute original direction traffic */
+			nf.nr_packets = nel->orig_packets;
+			nf.nr_bytes = nel->orig_bytes;
 			netflow_export_flow(&nf);
 		}
 		if (nel->pre.d_addr != nel->post.d_addr ||
@@ -4239,6 +4254,9 @@ static void export_nat_event(struct nat_event *nel)
 			nf.nh.ip = nel->pre.d_addr;
 			nf.s_as  = 0;
 			nf.d_as  = nel->pre.d_port;
+			/* For DNAT, attribute reply direction traffic */
+			nf.nr_packets = nel->reply_packets;
+			nf.nr_bytes = nel->reply_bytes;
 			netflow_export_flow(&nf);
 		}
 	}
@@ -4537,6 +4555,7 @@ static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
 	const struct nf_conntrack_tuple *t;
 	int ret = NOTIFY_DONE;
 	struct nf_ct_event_notifier *notifier;
+	struct nf_conn_acct *acct;
 
 	/* Call netlink first. */
 	notifier = rcu_dereference(saved_event_cb);
@@ -4574,6 +4593,22 @@ static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
 	nel->post.d_addr = t->src.u3.ip;
 	nel->post.s_port = t->dst.u.all;
 	nel->post.d_port = t->src.u.all;
+
+	/* Handle possible information with accounting */
+	acct = nf_conn_acct_find(ct);
+	if (likely(acct)) {
+		nel->orig_packets = atomic64_read(&acct->counter[IP_CT_DIR_ORIGINAL].packets);
+		nel->orig_bytes = atomic64_read(&acct->counter[IP_CT_DIR_ORIGINAL].bytes);
+		nel->reply_packets = atomic64_read(&acct->counter[IP_CT_DIR_REPLY].packets);
+		nel->reply_bytes = atomic64_read(&acct->counter[IP_CT_DIR_REPLY].bytes);
+	} else {
+		nel->orig_packets = 0;
+		nel->orig_bytes = 0;
+		nel->reply_packets = 0;
+		nel->reply_bytes = 0;
+	}
+
+
 	if (events & (1 << IPCT_DESTROY)) {
 		nel->nat_event = NAT_DESTROY;
 		nat_events_stop++;
