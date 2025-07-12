@@ -5231,15 +5231,7 @@ do_protocols:
 		nf->ethernetType = skb->protocol;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
-		rt = (struct rtable *)skb->dst;
-#else /* since 2.6.26 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-		rt = skb->rtable;
-#else /* since 2.6.31 */
 		rt = skb_rtable(skb);
-#endif
-#endif
 #ifdef ENABLE_DIRECTION
 		nf->hooknumx = hooknum + 1;
 #endif
@@ -5316,17 +5308,9 @@ unlock_return:
 }
 
 #ifdef CONFIG_NF_NAT_NEEDED
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
-	/* Below 2.6.31 we don't need to handle callback chain manually. */
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 #define NET_STRUCT struct net *net
 #define NET_ARG net,
 #define nf_conntrack_event_cb net->ct.nf_conntrack_event_cb
-#else
-#define NET_STRUCT void
-#define NET_ARG
-#endif
 static int set_notifier_cb(NET_STRUCT)
 {
 	struct nf_ct_event_notifier *notifier;
@@ -5366,14 +5350,11 @@ static void unset_notifier_cb(NET_STRUCT)
 		printk(KERN_ERR "ipt_NETFLOW: natevents already disabled.\n");
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 #undef nf_conntrack_event_cb
 static struct pernet_operations natevents_net_ops = {
 	.init = set_notifier_cb,
 	.exit = unset_notifier_cb
 };
-#endif
-#endif /* since 2.6.31 */
 
 static DEFINE_MUTEX(events_lock);
 static struct module *netlink_m;
