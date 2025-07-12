@@ -5361,20 +5361,15 @@ static struct module *netlink_m;
 /* Both functions may be called multiple times. */
 static void register_ct_events(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 #define NETLINK_M "nf_conntrack_netlink"
-#endif
+
 
 	printk(KERN_INFO "ipt_NETFLOW: enable natevents.\n");
 	mutex_lock(&events_lock);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 	/* Pre-load netlink module who will be first notifier
 	 * user, and then hijack nf_conntrack_event_cb from it. */
 	if (
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,2,0)
-	    !rcu_dereference(nf_conntrack_event_cb) ||
-#endif
 	    !find_module(NETLINK_M)) {
 		printk("Loading " NETLINK_M "\n");
 		request_module(NETLINK_M);
@@ -5387,16 +5382,7 @@ static void register_ct_events(void)
 	}
 
 	/* Register ct events callback. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 	register_pernet_subsys(&natevents_net_ops);
-#else
-	set_notifier_cb();
-#endif
-#else /* below v2.6.31 */
-	if (!natevents && nf_conntrack_register_notifier(&ctnl_notifier) < 0)
-		printk(KERN_ERR "Can't register conntrack notifier, natevents disabled.\n");
-	else
-#endif
 	natevents = 1;
 	mutex_unlock(&events_lock);
 }
@@ -5405,19 +5391,11 @@ static void unregister_ct_events(void)
 {
 	printk(KERN_INFO "ipt_NETFLOW: disable natevents.\n");
 	mutex_lock(&events_lock);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 	unregister_pernet_subsys(&natevents_net_ops);
-#else /* < v3.2 */
-	unset_notifier_cb();
-#endif /* v3.2 */
 	module_put(netlink_m);
 	netlink_m = NULL;
 
 	rcu_assign_pointer(saved_event_cb, NULL);
-#else /* < v2.6.31 */
-	nf_conntrack_unregister_notifier(&ctnl_notifier);
-#endif
 	natevents = 0;
 	mutex_unlock(&events_lock);
 }
@@ -5533,9 +5511,6 @@ static int __init ipt_netflow_init(void)
 	ipt_netflow_cachep = kmem_cache_create("ipt_netflow",
 						sizeof(struct ipt_netflow), 0,
 						0, NULL
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-						, NULL
-#endif
 					      );
 	if (!ipt_netflow_cachep) {
 		printk(KERN_ERR "Unable to create ipt_netflow slab cache\n");
@@ -5551,24 +5526,11 @@ static int __init ipt_netflow_init(void)
 
 #ifdef CONFIG_SYSCTL
 	ctl_table_renumber(netflow_sysctl_table);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-	netflow_sysctl_header = register_sysctl_table(netflow_net_table
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,21)
-						      , 0 /* insert_at_head */
-#endif
-						      );
-#else /* 2.6.25 */
 # ifdef HAVE_REGISTER_SYSCTL_PATHS
 	netflow_sysctl_header = register_sysctl_paths(netflow_sysctl_path, netflow_sysctl_table);
 # else
 
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
 	netflow_sysctl_header = register_sysctl_sz("net/netflow", netflow_sysctl_table, ARRAY_SIZE(netflow_sysctl_table));
-# else
-	netflow_sysctl_header = register_sysctl("net/netflow", netflow_sysctl_table);
-# endif
-
-# endif
 #endif
 	if (!netflow_sysctl_header) {
 		printk(KERN_ERR "netflow: can't register to sysctl\n");
