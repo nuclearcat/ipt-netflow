@@ -2486,9 +2486,6 @@ static struct ipt_netflow *
 ipt_netflow_find(const struct ipt_netflow_tuple *tuple, const unsigned int hash)
 {
 	struct ipt_netflow *nf;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 
 	compat_hlist_for_each_entry(nf, pos, &htable[hash], hlist) {
 		if (ipt_netflow_tuple_equal(tuple, &nf->tuple) &&
@@ -3167,9 +3164,6 @@ struct data_template {
 static void free_templates(void)
 {
 	int i;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 	struct hlist_node *tmp;
 
 	for (i = 0; i < TEMPLATES_HASH_SIZE; i++) {
@@ -3197,9 +3191,6 @@ static struct data_template *get_template(const unsigned int tmask)
 	int tnum;
 	int length;
 	int i, j, k;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 	int hash = hash_long(tmask, TEMPLATES_HASH_BSIZE);
 
 	compat_hlist_for_each_entry(tpl, pos, &templates_hash[hash], hlist)
