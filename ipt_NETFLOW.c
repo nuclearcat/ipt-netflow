@@ -4476,11 +4476,7 @@ static int netflow_scan_and_export(const int flush)
 	return pdu_count - pdu_c;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-static void netflow_work_fn(void *dummy)
-#else
 static void netflow_work_fn(struct work_struct *dummy)
-#endif
 {
 	int pdus;
 
@@ -4585,7 +4581,6 @@ static void rate_timer_calc(
 }
 
 #ifdef CONFIG_NF_NAT_NEEDED
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 static struct nf_ct_event_notifier *saved_event_cb __read_mostly = NULL;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 static int netflow_conntrack_expect_event(const unsigned int events, const struct nf_exp_event *item)
@@ -4601,29 +4596,18 @@ static int netflow_conntrack_expect_event(const unsigned int events, const struc
 }
 #endif
 static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
-#else
-static int netflow_conntrack_event(struct notifier_block *this, unsigned long events, void *ptr)
-#endif
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 	struct nf_conn *ct = item->ct;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 	struct nf_conn_tstamp *tstamp = nf_conn_tstamp_find(ct);
-#endif
-#else
-	struct nf_conn *ct = (struct nf_conn *)ptr;
-#endif
 	struct nat_event *nel;
 	const struct nf_conntrack_tuple *t;
 	int ret = NOTIFY_DONE;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 	struct nf_ct_event_notifier *notifier;
 
 	/* Call netlink first. */
 	notifier = rcu_dereference(saved_event_cb);
 	if (likely(notifier))
 		ret = notifier->ct_event(events, item);
-#endif
 	if (unlikely(!natevents))
 		return ret;
 
@@ -4659,17 +4643,13 @@ static int netflow_conntrack_event(struct notifier_block *this, unsigned long ev
 	if (events & (1 << IPCT_DESTROY)) {
 		nel->nat_event = NAT_DESTROY;
 		nat_events_stop++;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->stop);
-#endif /* after 2.6.38 */
 	} else {
 		nel->nat_event = NAT_CREATE;
 		nat_events_start++;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->start);
-#endif /* after 2.6.38 */
 	}
 	if (ktime_to_ns(nel->ts_ktime) == 0)
 		nel->ts_ktime = ktime_get_real();
@@ -4681,40 +4661,19 @@ static int netflow_conntrack_event(struct notifier_block *this, unsigned long ev
 	return ret;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-static struct notifier_block ctnl_notifier = {
-	.notifier_call = netflow_conntrack_event
-};
-#else
 static struct nf_ct_event_notifier ctnl_notifier = {
 	.ct_event = netflow_conntrack_event,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 	.exp_event = netflow_conntrack_expect_event,
 #endif
 };
-#endif /* since 2.6.31 */
 #endif /* CONFIG_NF_NAT_NEEDED */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,23) && \
-    LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-static bool
-#else
 static int
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-netflow_target_check(const char *tablename, const void *entry, const struct xt_target *target,
-    void *targinfo,
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,18)
-    unsigned int targinfosize,
-#endif
-    unsigned int hook_mask)
-{
-#else
 netflow_target_check(const struct xt_tgchk_param *par)
 {
 	const char *tablename = par->table;
 	const struct xt_target *target = par->target;
-#endif
 	if (strcmp("nat", tablename) == 0) {
 		/* In the nat table we only see single packet per flow, which is useless. */
 		printk(KERN_ERR "%s target: is not valid in %s table\n", target->name, tablename);
