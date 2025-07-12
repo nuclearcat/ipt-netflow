@@ -4474,7 +4474,13 @@ static int netflow_scan_and_export(const int flush)
 				val = nf->sampler_count % interval;
 				break;
 			case SAMPLER_RANDOM:
-				val = prandom_u32_max(interval);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0)
+    			val = get_random_u32_below(interval);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
+    			val = prandom_u32_max(interval);
+#else
+    			val = prandom_u32() % interval;
+#endif
 				break;
 			default: /* SAMPLER_HASH */
 				val = 0;
@@ -4491,7 +4497,7 @@ static int netflow_scan_and_export(const int flush)
 	}
 
 #ifdef CONFIG_NF_NAT_NEEDED
-	int max_nat_events = nf_events_max;
+	int max_nat_events = nfevents_limit;
 	spin_lock_bh(&nat_lock);
 	list_splice_init(&nat_list, &nat_list_export);
 	spin_unlock_bh(&nat_lock);
