@@ -364,6 +364,10 @@ struct nat_event {
 	unsigned long	ts_jiffies;
 	__u8	protocol;
 	__u8	nat_event;
+	u64     orig_packets; /* bytes received */
+	u64     orig_bytes;   /* packets received */
+	u64     reply_packets; /* bytes sent */
+	u64     reply_bytes;   /* packets sent */
 };
 #define IS_DUMMY_FLOW(nf) (nf->nat)
 #else

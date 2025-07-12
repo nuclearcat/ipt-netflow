@@ -64,5 +64,5 @@ jobs:
           run: |
             ls -la
             cd ipt-netflow
-            ./configure --kdir=../linux-${{ matrix.kernel-version }}
+            ./configure --kdir=../linux-${{ matrix.kernel-version }} --enable-promisc --enable-natevents --enable-macaddress --enable-vlan --enable-direction --enable-sample
             make
