@@ -1729,19 +1729,8 @@ static int natevents_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct f
 
 static struct ctl_table_header *netflow_sysctl_header;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-#define _CTL_NAME(x) .ctl_name = x,
-static void ctl_table_renumber(PROC_CTL_TABLE *table)
-{
-	int c;
-
-	for (c = 1; table->procname; table++, c++)
-		table->ctl_name = c;
-}
-#else
 #define _CTL_NAME(x)
 #define ctl_table_renumber(x)
-#endif
 static ctl_table_no_const netflow_sysctl_table[] = {
 	{
 		.procname	= "active_timeout",
@@ -1875,31 +1864,6 @@ static ctl_table_no_const netflow_sysctl_table[] = {
 # endif
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-static PROC_CTL_TABLE netflow_sysctl_root[] = {
-	{
-		_CTL_NAME(33)
-		.procname	= "netflow",
-		.mode		= 0555,
-		.child		= netflow_sysctl_table,
-	},
-# if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)	
-	{ }
-# endif	
-};
-
-static PROC_CTL_TABLE netflow_net_table[] = {
-	{
-		.ctl_name	= CTL_NET,
-		.procname	= "net",
-		.mode		= 0555,
-		.child		= netflow_sysctl_root,
-	},
-# if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
-	{ }
-# endif	
-};
-#else /* >= 2.6.25 */
 # ifdef HAVE_REGISTER_SYSCTL_PATHS
 static struct ctl_path netflow_sysctl_path[] = {
 	{
@@ -1911,7 +1875,6 @@ static struct ctl_path netflow_sysctl_path[] = {
 	{ .procname = "netflow" },
 # if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
 	{ }
-# endif
 
 };
 # endif
