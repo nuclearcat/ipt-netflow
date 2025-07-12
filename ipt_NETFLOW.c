@@ -4881,55 +4881,21 @@ static void parse_l2_header(const struct sk_buff *skb, struct ipt_netflow_tuple 
 
 /* packet receiver */
 static unsigned int netflow_target(
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-			   struct sk_buff **pskb,
-#else
 			   struct sk_buff *skb,
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-			   const struct net_device *if_in,
-			   const struct net_device *if_out,
-			   unsigned int hooknum,
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,17)
-			   const struct xt_target *target,
-# endif
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-			   const void *targinfo,
-			   void *userinfo
-# else
-			   const void *targinfo
-# endif
-#else /* since 2.6.28 */
 # define if_in  xt_in(par)
 # define if_out xt_out(par)
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-			   const struct xt_target_param *par
-# else
 			   const struct xt_action_param *par
-# endif
-#endif
 		)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-# ifndef ENABLE_L2
-	/* pskb_may_pull() may modify skb */
-	const
-# endif
-		struct sk_buff *skb = *pskb;
-#endif
 	union {
 		struct iphdr ip;
 		struct ipv6hdr ip6;
 	} _iph, *iph;
 	u_int32_t hash;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-	const int family = target->family;
-#else
 # ifdef ENABLE_DIRECTION
 	const int hooknum = xt_hooknum(par);
 # endif
 	const int family = xt_family(par);
-#endif
 	struct ipt_netflow_tuple tuple;
 	struct ipt_netflow *nf;
 	__u8 tcp_flags;
