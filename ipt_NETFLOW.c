@@ -1868,9 +1868,6 @@ static ctl_table_no_const netflow_sysctl_table[] = {
 static struct ctl_path netflow_sysctl_path[] = {
 	{
 		.procname = "net",
-#  if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)
-		.ctl_name = CTL_NET
-#  endif
 	},
 	{ .procname = "netflow" },
 # if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
@@ -1878,7 +1875,6 @@ static struct ctl_path netflow_sysctl_path[] = {
 
 };
 # endif
-#endif /* 2.6.25 */
 #endif /* CONFIG_SYSCTL */
 
 /* socket code */
@@ -1925,10 +1921,8 @@ static struct socket *usock_open_sock(struct ipt_netflow_sock *usock)
 
 			/* SO_BINDTOIFINDEX */
 			sk->sk_bound_dev_if = dev->ifindex;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
 			if (sk->sk_prot->rehash)
 				sk->sk_prot->rehash(sk);
-#endif
 			sk_dst_reset(sk);
 			dev_put(dev);
 		} else {
@@ -4022,11 +4016,9 @@ static int ethtool_drvinfo(unsigned char *ptr, size_t size, struct net_device *d
 	/* driver name */
 	if (ops->get_drvinfo)
 		ops->get_drvinfo(dev, &info);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
 	else if (dev->dev.parent && dev->dev.parent->driver) {
 		strscpy(info.driver, dev->dev.parent->driver->name, sizeof(info.driver));
 	}
-#endif
 	n = scnprintf(ptr, len, "%s", info.driver);
 	ptr += n;
 	len -= n;
@@ -4143,13 +4135,11 @@ static void export_dev(struct net_device *dev)
 			/* manual dev 'alias' setting is a first priority,
 			 * then ethtool driver name with basic info,
 			 * finally net_device.type is a last resort */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
 			if (dev->ifalias) {
 				n = dev_get_alias(dev, ptr, size);
 				if (n >= size)
 					n = size - 1;
 			} else
-#endif
 				n = ethtool_drvinfo(ptr, size, dev);
 			if (!n)
 				n = scnprintf(ptr, size, "%s", dev_type(dev->type));
