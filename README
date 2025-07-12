@@ -1,4 +1,5 @@
-ipt_NETFLOW linux 2.6.x-5.x kernel module by <abc@openwall.com> -- 2008-2021.
+ipt_NETFLOW linux 5.x kernel module by <abc@openwall.com> -- 2008-2025.
+Continued development by <denys.f@collabora.com> in 2025 https://github.com/nuclearcat/ipt-netflow
 
    High performance NetFlow v5, v9, IPFIX flow data export module for Linux
    kernel. Created to be useful for linux routers in high-throughput networks.
@@ -60,7 +61,7 @@ ipt_NETFLOW linux 2.6.x-5.x kernel module by <abc@openwall.com> -- 2008-2021.
 = OBTAINING LATEST VERSION =
 ============================
 
-   $ git clone git://github.com/aabc/ipt-netflow.git ipt-netflow
+   $ git clone git://github.com/nuclearcat/ipt-netflow.git ipt-netflow
    $ cd ipt-netflow
 
 
@@ -169,7 +170,7 @@ ipt_NETFLOW linux 2.6.x-5.x kernel module by <abc@openwall.com> -- 2008-2021.
        # gem install curses
 
      z) If all fails create ticket at
-          https://github.com/aabc/ipt-netflow/issues
+          https://github.com/nuclearcat/ipt-netflow/issues
 
 ** 5. After this point you should be able to load module and
      use -j NETFLOW target in your iptables. See next section.
@@ -312,6 +313,11 @@ ipt_NETFLOW linux 2.6.x-5.x kernel module by <abc@openwall.com> -- 2008-2021.
 
      # sysctl net.netflow.natevents=1
 
+   Also make sure that conntrack events are enabled in your kernel by sysctl:
+
+     # sysctl net.netfilter.nf_conntrack_events=1
+
+
    Note that natevents feature is completely independent from traffic accounting
    (it's using so called conntrack events), thus you don't need to set or change
    any iptables rules to use that. You may need to enable kernel config option
@@ -336,7 +342,7 @@ ipt_NETFLOW linux 2.6.x-5.x kernel module by <abc@openwall.com> -- 2008-2021.
    into ~/.snmp/mibs/
 
    * Detailed example of SNMP configuration is there:
-   * https://github.com/aabc/ipt-netflow/wiki/Configuring-SNMP-access
+   * https://github.com/nuclearcat/ipt-netflow/wiki/Configuring-SNMP-access
 
    To check that MIB is installed well you may issue:
 
