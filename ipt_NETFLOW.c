@@ -1216,13 +1216,8 @@ static struct file_operations flows_seq_fops = {
 
 #ifdef ENABLE_PROMISC
 static int promisc_finish(
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
     struct net *net,
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || \
-    (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR >= 2)
     struct sock *sk,
-#endif
     struct sk_buff *skb)
 {
 	/* don't pass to the routing */
@@ -1259,12 +1254,8 @@ static int promisc4_rcv(struct sk_buff *skb, struct net_device *dev, struct pack
 	skb_orphan(skb);
 
 	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	    dev_net(dev),
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR > 1)
 	    NULL,
-#endif
 	    skb, dev, NULL, promisc_finish);
 drop:
 	NETFLOW_STAT_INC(pkt_promisc_drop);
@@ -1334,12 +1325,8 @@ static int promisc6_rcv(struct sk_buff *skb, struct net_device *dev, struct pack
 	skb_orphan(skb);
 
 	return NF_HOOK(NFPROTO_IPV6, NF_INET_PRE_ROUTING,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	    dev_net(dev),
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR > 1)
 	    NULL,
-#endif
 	    skb, dev, NULL, promisc_finish);
 drop:
 	rcu_read_unlock();
@@ -4458,11 +4445,7 @@ static void netflow_work_fn(struct work_struct *dummy)
 
 // calculate EWMA throughput rate for whole module
 static void rate_timer_calc(
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
-    unsigned long dummy
-#else
     struct timer_list *t
-#endif
     )
 {
 	static u64 old_pkt_total = 0;
@@ -4777,10 +4760,8 @@ static void parse_l2_header(const struct sk_buff *skb, struct ipt_netflow_tuple 
 		 * just inversion of conditional from vlan_do_receive */
 		if (!(vlan
 		    && !(vlan->flags & VLAN_FLAG_REORDER_HDR)
-#  if LINUX_VERSION_CODE >= KERNEL_VERSION(4,3,0)
 		    && !netif_is_macvlan_port(vlan_dev)
 		    && !netif_is_bridge_port(vlan_dev)
-#  endif
 		   ))
 # endif
 			tuple->tag[tag_num++] = htons(vlan_dev_vlan_id(vlan_dev));
