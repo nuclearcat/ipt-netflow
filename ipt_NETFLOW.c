@@ -4442,7 +4442,7 @@ static void netflow_work_fn(struct work_struct *dummy)
 #ifdef __smp_processor_id
 	wk_cpu = __smp_processor_id();
 #else
-	wk_cpu = smp_processor_id();
+	wk_cpu = raw_smp_processor_id();
 #endif
 	wk_start = jiffies;
 
