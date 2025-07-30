@@ -77,7 +77,7 @@ struct netflow5_pdu {
 		one(id, a, len)	\
 		one(id, b, len)
 #define Elements \
-	two(1,   IN_BYTES, octetDeltaCount, 4) \
+	two(1,   IN_BYTES, octetDeltaCount, 8) \
 	two(2,   IN_PKTS, packetDeltaCount, 4) \
 	two(4,   PROTOCOL, protocolIdentifier, 1) \
 	two(5,   TOS, ipClassOfService, 1) \
@@ -93,6 +93,8 @@ struct netflow5_pdu {
 	two(15,  IPV4_NEXT_HOP, ipNextHopIPv4Address, 4) \
 	two(21,  LAST_SWITCHED, flowEndSysUpTime, 4) \
 	two(22,  FIRST_SWITCHED, flowStartSysUpTime, 4) \
+	two(23,  OUT_BYTES, octetDeltaCountOut, 8) \
+	two(24,  OUT_PKTS, packetDeltaCountOut, 4) \
 	one(25,  minimumIpTotalLength, 2) \
 	one(26,  maximumIpTotalLength, 2) \
 	two(27,  IPV6_SRC_ADDR, sourceIPv6Address, 16) \

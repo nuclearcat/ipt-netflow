@@ -2996,6 +2996,10 @@ static struct base_template template_nat4 = {
 		postNAPTDestinationTransportPort,
 		PROTOCOL,
 		natEvent,
+		IN_PKTS,
+		IN_BYTES,
+		OUT_PKTS,
+		OUT_BYTES,
 		0
 	}
 };
@@ -3490,8 +3494,20 @@ typedef struct in6_addr in6_t;
 static inline void add_tpl_field(__u8 *ptr, const int type, const struct ipt_netflow *nf)
 {
 	switch (type) {
-	case IN_BYTES:	     put_unaligned_be32(nf->nr_bytes, ptr); break;
-	case IN_PKTS:	     put_unaligned_be32(nf->nr_packets, ptr); break;
+	case IN_BYTES:
+		if (nf->nat) {
+			put_unaligned_be64(nf->nat->orig_bytes, (__be64 *)ptr);
+		} else {
+			put_unaligned_be64(nf->nr_bytes, (__be64 *)ptr);
+		}
+		break;
+	case IN_PKTS:
+		if (nf->nat) {
+			put_unaligned_be64(nf->nat->orig_packets, (__be64 *)ptr);
+		} else {
+			put_unaligned_be64(nf->nr_packets, (__be64 *)ptr);
+		}
+		break;
 	case FIRST_SWITCHED: put_unaligned_be32(jiffies_to_msecs(nf->nf_ts_first), ptr); break;
 	case LAST_SWITCHED:  put_unaligned_be32(jiffies_to_msecs(nf->nf_ts_last), ptr); break;
 	case flowStartMilliseconds: put_unaligned_be64(jiffies_to_ms_abs(nf->nf_ts_first), ptr); break;
@@ -3578,6 +3594,8 @@ static inline void add_tpl_field(__u8 *ptr, const int type, const struct ipt_net
 	case postNATDestinationIPv4Address:    put_unaligned(nf->nat->post.d_addr, (__be32 *)ptr); break;
 	case postNAPTSourceTransportPort:      put_unaligned(nf->nat->post.s_port, (__be16 *)ptr); break;
 	case postNAPTDestinationTransportPort: put_unaligned(nf->nat->post.d_port, (__be16 *)ptr); break;
+	case OUT_BYTES:	         			   put_unaligned_be64(nf->nat->reply_bytes, (__be64 *)ptr); break;
+	case OUT_PKTS:	       			       put_unaligned_be32(nf->nat->reply_packets, (__be32 *)ptr); break;
 	case natEvent:		       *ptr = nf->nat->nat_event; break;
 #endif
 	case IPSecSPI:       put_unaligned(EXTRACT_SPI(nf->tuple), (__be32 *)ptr); break;
@@ -4212,18 +4230,7 @@ static void export_nat_event(struct nat_event *nel)
 		nf.tuple.dst.ip = nel->pre.d_addr;
 		nf.tuple.s_port = nel->pre.s_port;
 		nf.tuple.d_port = nel->pre.d_port;
-		nf.nr_packets = nel->orig_packets;
-		nf.nr_bytes = nel->orig_bytes;
 		netflow_export_flow(&nf);
-		if (nel->reply_packets > 0) {
-			nf.tuple.src.ip = nel->post.s_addr;
-			nf.tuple.dst.ip = nel->post.d_addr;
-			nf.tuple.s_port = nel->post.s_port;
-			nf.tuple.d_port = nel->post.d_port;
-			nf.nr_packets = nel->reply_packets;
-			nf.nr_bytes = nel->reply_bytes;
-			netflow_export_flow(&nf);
-		}
 	} else { /* v5 */
 		/* The weird v5 packet(s).
 		 * src and dst will be same as in data flow from the FORWARD chain
