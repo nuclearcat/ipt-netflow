@@ -66,6 +66,7 @@
 # include <linux/notifier.h>
 # include <net/netfilter/nf_conntrack.h>
 # include <net/netfilter/nf_conntrack_core.h>
+# include <net/netfilter/nf_conntrack_acct.h>
 #endif
 #include <linux/version.h>
 
@@ -90,9 +91,7 @@
 /* No conntrack events in the kernel imply no natevents. */
 # undef CONFIG_NF_NAT_NEEDED
 #endif
-#if defined(CONFIG_NF_NAT_NEEDED) && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
-# include <net/netfilter/nf_conntrack_timestamp.h>
-#endif
+#include <net/netfilter/nf_conntrack_timestamp.h>
 #if !IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 # ifdef ENABLE_PHYSDEV_OVER
 #  warning "Requested physdev override is not compiled."
@@ -312,13 +311,8 @@ static void (*netflow_export_flow)(struct ipt_netflow *nf);
 static void (*netflow_export_pdu)(void); /* called on timeout */
 static void netflow_switch_version(int ver);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-static void netflow_work_fn(void *work);
-static DECLARE_WORK(netflow_work, netflow_work_fn, NULL);
-#else
 static void netflow_work_fn(struct work_struct *work);
 static DECLARE_DELAYED_WORK(netflow_work, netflow_work_fn);
-#endif
 static struct timer_list rate_timer;
 
 #define TCP_SYN_ACK 0x12
@@ -403,11 +397,7 @@ static inline void cont_scan_worker(void)
 
 static inline void _unschedule_scan_worker(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-	cancel_rearming_delayed_work(&netflow_work);
-#else
 	cancel_delayed_work_sync(&netflow_work);
-#endif
 }
 
 /* This is only used for quick pause (in procctl). */
@@ -447,42 +437,7 @@ static inline unsigned short sampler_nf_v5(void)
 /* return value is different from usual snprintf */
 static char *snprintf_sockaddr(char *buf, size_t len, const struct sockaddr_storage *ss)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-	if (ss->ss_family == AF_INET) {
-		const struct sockaddr_in *sin = (struct sockaddr_in *)ss;
-
-		snprintf(buf, len, "%u.%u.%u.%u:%u",
-		    NIPQUAD(sin->sin_addr.s_addr),
-		    ntohs(sin->sin_port));
-	} else if (ss->ss_family == AF_INET6) {
-		const struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ss;
-
-		snprintf(buf, len, "[%x:%x:%x:%x:%x:%x:%x:%x]:%u",
-		    ntohs(sin6->sin6_addr.s6_addr16[0]),
-		    ntohs(sin6->sin6_addr.s6_addr16[1]),
-		    ntohs(sin6->sin6_addr.s6_addr16[2]),
-		    ntohs(sin6->sin6_addr.s6_addr16[3]),
-		    ntohs(sin6->sin6_addr.s6_addr16[4]),
-		    ntohs(sin6->sin6_addr.s6_addr16[5]),
-		    ntohs(sin6->sin6_addr.s6_addr16[6]),
-		    ntohs(sin6->sin6_addr.s6_addr16[7]),
-		    ntohs(sin6->sin6_port));
-	} else
-		snprintf(buf, len, "(invalid address)");
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
-	if (ss->ss_family == AF_INET)
-		snprintf(buf, len, "%pI4:%u",
-		    &((const struct sockaddr_in *)ss)->sin_addr,
-		    ntohs(((const struct sockaddr_in *)ss)->sin_port));
-	else if (ss->ss_family == AF_INET6)
-		snprintf(buf, len, "[%pI6c]:%u",
-		    &((const struct sockaddr_in6 *)ss)->sin6_addr,
-		    ntohs(((const struct sockaddr_in6 *)ss)->sin6_port));
-	else
-		snprintf(buf, len, "(invalid address)");
-#else
 	snprintf(buf, len, "%pISpc", ss);
-#endif
 	return buf;
 }
 
@@ -770,11 +725,11 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 		    sampler_mode_string(),
 		    get_sampler_interval());
 		if (get_sampler_mode() != SAMPLER_HASH)
-			seq_printf(seq, " Flows selected %lu, discarded %lu.",
+			seq_printf(seq, " Flows selected %lld, discarded %lld.",
 			    atomic64_read(&flows_selected),
 			    atomic64_read(&flows_observed) - atomic64_read(&flows_selected));
 		else
-			seq_printf(seq, " Flows selected %lu.", atomic64_read(&flows_selected));
+			seq_printf(seq, " Flows selected %lld.", atomic64_read(&flows_selected));
 		seq_printf(seq, " Pkts selected %llu, discarded %llu.\n",
 		    t.pkts_selected,
 		    t.pkts_observed - t.pkts_selected);
@@ -1262,13 +1217,8 @@ static struct file_operations flows_seq_fops = {
 
 #ifdef ENABLE_PROMISC
 static int promisc_finish(
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
     struct net *net,
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || \
-    (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR >= 2)
     struct sock *sk,
-#endif
     struct sk_buff *skb)
 {
 	/* don't pass to the routing */
@@ -1305,12 +1255,8 @@ static int promisc4_rcv(struct sk_buff *skb, struct net_device *dev, struct pack
 	skb_orphan(skb);
 
 	return NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	    dev_net(dev),
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR > 1)
 	    NULL,
-#endif
 	    skb, dev, NULL, promisc_finish);
 drop:
 	NETFLOW_STAT_INC(pkt_promisc_drop);
@@ -1380,12 +1326,8 @@ static int promisc6_rcv(struct sk_buff *skb, struct net_device *dev, struct pack
 	skb_orphan(skb);
 
 	return NF_HOOK(NFPROTO_IPV6, NF_INET_PRE_ROUTING,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	    dev_net(dev),
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0) || (defined(RHEL_MAJOR) && RHEL_MAJOR == 7 && RHEL_MINOR > 1)
 	    NULL,
-#endif
 	    skb, dev, NULL, promisc_finish);
 drop:
 	rcu_read_unlock();
@@ -1775,19 +1717,8 @@ static int natevents_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct f
 
 static struct ctl_table_header *netflow_sysctl_header;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-#define _CTL_NAME(x) .ctl_name = x,
-static void ctl_table_renumber(PROC_CTL_TABLE *table)
-{
-	int c;
-
-	for (c = 1; table->procname; table++, c++)
-		table->ctl_name = c;
-}
-#else
 #define _CTL_NAME(x)
 #define ctl_table_renumber(x)
-#endif
 static ctl_table_no_const netflow_sysctl_table[] = {
 	{
 		.procname	= "active_timeout",
@@ -1921,47 +1852,18 @@ static ctl_table_no_const netflow_sysctl_table[] = {
 # endif
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-static PROC_CTL_TABLE netflow_sysctl_root[] = {
-	{
-		_CTL_NAME(33)
-		.procname	= "netflow",
-		.mode		= 0555,
-		.child		= netflow_sysctl_table,
-	},
-# if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)	
-	{ }
-# endif	
-};
-
-static PROC_CTL_TABLE netflow_net_table[] = {
-	{
-		.ctl_name	= CTL_NET,
-		.procname	= "net",
-		.mode		= 0555,
-		.child		= netflow_sysctl_root,
-	},
-# if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
-	{ }
-# endif	
-};
-#else /* >= 2.6.25 */
 # ifdef HAVE_REGISTER_SYSCTL_PATHS
 static struct ctl_path netflow_sysctl_path[] = {
 	{
 		.procname = "net",
-#  if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)
-		.ctl_name = CTL_NET
-#  endif
 	},
 	{ .procname = "netflow" },
 # if LINUX_VERSION_CODE < KERNEL_VERSION(6,11,0)
 	{ }
-# endif
 
 };
 # endif
-#endif /* 2.6.25 */
+#endif
 #endif /* CONFIG_SYSCTL */
 
 /* socket code */
@@ -2572,9 +2474,6 @@ static struct ipt_netflow *
 ipt_netflow_find(const struct ipt_netflow_tuple *tuple, const unsigned int hash)
 {
 	struct ipt_netflow *nf;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 
 	compat_hlist_for_each_entry(nf, pos, &htable[hash], hlist) {
 		if (ipt_netflow_tuple_equal(tuple, &nf->tuple) &&
@@ -3253,9 +3152,6 @@ struct data_template {
 static void free_templates(void)
 {
 	int i;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 	struct hlist_node *tmp;
 
 	for (i = 0; i < TEMPLATES_HASH_SIZE; i++) {
@@ -3283,9 +3179,6 @@ static struct data_template *get_template(const unsigned int tmask)
 	int tnum;
 	int length;
 	int i, j, k;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-	struct hlist_node *pos;
-#endif
 	int hash = hash_long(tmask, TEMPLATES_HASH_BSIZE);
 
 	compat_hlist_for_each_entry(tpl, pos, &templates_hash[hash], hlist)
@@ -4319,7 +4212,18 @@ static void export_nat_event(struct nat_event *nel)
 		nf.tuple.dst.ip = nel->pre.d_addr;
 		nf.tuple.s_port = nel->pre.s_port;
 		nf.tuple.d_port = nel->pre.d_port;
+		nf.nr_packets = nel->orig_packets;
+		nf.nr_bytes = nel->orig_bytes;
 		netflow_export_flow(&nf);
+		if (nel->reply_packets > 0) {
+			nf.tuple.src.ip = nel->post.s_addr;
+			nf.tuple.dst.ip = nel->post.d_addr;
+			nf.tuple.s_port = nel->post.s_port;
+			nf.tuple.d_port = nel->post.d_port;
+			nf.nr_packets = nel->reply_packets;
+			nf.nr_bytes = nel->reply_bytes;
+			netflow_export_flow(&nf);
+		}
 	} else { /* v5 */
 		/* The weird v5 packet(s).
 		 * src and dst will be same as in data flow from the FORWARD chain
@@ -4340,6 +4244,9 @@ static void export_nat_event(struct nat_event *nel)
 			nf.nh.ip = nel->post.s_addr;
 			nf.s_as  = nel->post.s_port;
 			nf.d_as  = 0;
+			/* For SNAT, attribute original direction traffic */
+			nf.nr_packets = nel->orig_packets;
+			nf.nr_bytes = nel->orig_bytes;
 			netflow_export_flow(&nf);
 		}
 		if (nel->pre.d_addr != nel->post.d_addr ||
@@ -4347,6 +4254,9 @@ static void export_nat_event(struct nat_event *nel)
 			nf.nh.ip = nel->pre.d_addr;
 			nf.s_as  = 0;
 			nf.d_as  = nel->pre.d_port;
+			/* For DNAT, attribute reply direction traffic */
+			nf.nr_packets = nel->reply_packets;
+			nf.nr_bytes = nel->reply_bytes;
 			netflow_export_flow(&nf);
 		}
 	}
@@ -4522,11 +4432,7 @@ static int netflow_scan_and_export(const int flush)
 	return pdu_count - pdu_c;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-static void netflow_work_fn(void *dummy)
-#else
 static void netflow_work_fn(struct work_struct *dummy)
-#endif
 {
 	int pdus;
 
@@ -4536,7 +4442,7 @@ static void netflow_work_fn(struct work_struct *dummy)
 #ifdef __smp_processor_id
 	wk_cpu = __smp_processor_id();
 #else
-	wk_cpu = smp_processor_id();
+	wk_cpu = raw_smp_processor_id();
 #endif
 	wk_start = jiffies;
 
@@ -4557,11 +4463,7 @@ static void netflow_work_fn(struct work_struct *dummy)
 
 // calculate EWMA throughput rate for whole module
 static void rate_timer_calc(
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0)
-    unsigned long dummy
-#else
     struct timer_list *t
-#endif
     )
 {
 	static u64 old_pkt_total = 0;
@@ -4631,7 +4533,6 @@ static void rate_timer_calc(
 }
 
 #ifdef CONFIG_NF_NAT_NEEDED
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 static struct nf_ct_event_notifier *saved_event_cb __read_mostly = NULL;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 static int netflow_conntrack_expect_event(const unsigned int events, const struct nf_exp_event *item)
@@ -4647,29 +4548,19 @@ static int netflow_conntrack_expect_event(const unsigned int events, const struc
 }
 #endif
 static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
-#else
-static int netflow_conntrack_event(struct notifier_block *this, unsigned long events, void *ptr)
-#endif
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 	struct nf_conn *ct = item->ct;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 	struct nf_conn_tstamp *tstamp = nf_conn_tstamp_find(ct);
-#endif
-#else
-	struct nf_conn *ct = (struct nf_conn *)ptr;
-#endif
 	struct nat_event *nel;
 	const struct nf_conntrack_tuple *t;
 	int ret = NOTIFY_DONE;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 	struct nf_ct_event_notifier *notifier;
+	struct nf_conn_acct *acct;
 
 	/* Call netlink first. */
 	notifier = rcu_dereference(saved_event_cb);
 	if (likely(notifier))
 		ret = notifier->ct_event(events, item);
-#endif
 	if (unlikely(!natevents))
 		return ret;
 
@@ -4702,20 +4593,32 @@ static int netflow_conntrack_event(struct notifier_block *this, unsigned long ev
 	nel->post.d_addr = t->src.u3.ip;
 	nel->post.s_port = t->dst.u.all;
 	nel->post.d_port = t->src.u.all;
+
+	/* Handle possible information with accounting */
+	acct = nf_conn_acct_find(ct);
+	if (likely(acct)) {
+		nel->orig_packets = atomic64_read(&acct->counter[IP_CT_DIR_ORIGINAL].packets);
+		nel->orig_bytes = atomic64_read(&acct->counter[IP_CT_DIR_ORIGINAL].bytes);
+		nel->reply_packets = atomic64_read(&acct->counter[IP_CT_DIR_REPLY].packets);
+		nel->reply_bytes = atomic64_read(&acct->counter[IP_CT_DIR_REPLY].bytes);
+	} else {
+		nel->orig_packets = 0;
+		nel->orig_bytes = 0;
+		nel->reply_packets = 0;
+		nel->reply_bytes = 0;
+	}
+
+
 	if (events & (1 << IPCT_DESTROY)) {
 		nel->nat_event = NAT_DESTROY;
 		nat_events_stop++;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->stop);
-#endif /* after 2.6.38 */
 	} else {
 		nel->nat_event = NAT_CREATE;
 		nat_events_start++;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->start);
-#endif /* after 2.6.38 */
 	}
 	if (ktime_to_ns(nel->ts_ktime) == 0)
 		nel->ts_ktime = ktime_get_real();
@@ -4727,40 +4630,19 @@ static int netflow_conntrack_event(struct notifier_block *this, unsigned long ev
 	return ret;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-static struct notifier_block ctnl_notifier = {
-	.notifier_call = netflow_conntrack_event
-};
-#else
 static struct nf_ct_event_notifier ctnl_notifier = {
 	.ct_event = netflow_conntrack_event,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 	.exp_event = netflow_conntrack_expect_event,
 #endif
 };
-#endif /* since 2.6.31 */
 #endif /* CONFIG_NF_NAT_NEEDED */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,23) && \
-    LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-static bool
-#else
 static int
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-netflow_target_check(const char *tablename, const void *entry, const struct xt_target *target,
-    void *targinfo,
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,18)
-    unsigned int targinfosize,
-#endif
-    unsigned int hook_mask)
-{
-#else
 netflow_target_check(const struct xt_tgchk_param *par)
 {
 	const char *tablename = par->table;
 	const struct xt_target *target = par->target;
-#endif
 	if (strcmp("nat", tablename) == 0) {
 		/* In the nat table we only see single packet per flow, which is useless. */
 		printk(KERN_ERR "%s target: is not valid in %s table\n", target->name, tablename);
@@ -4913,10 +4795,8 @@ static void parse_l2_header(const struct sk_buff *skb, struct ipt_netflow_tuple 
 		 * just inversion of conditional from vlan_do_receive */
 		if (!(vlan
 		    && !(vlan->flags & VLAN_FLAG_REORDER_HDR)
-#  if LINUX_VERSION_CODE >= KERNEL_VERSION(4,3,0)
 		    && !netif_is_macvlan_port(vlan_dev)
 		    && !netif_is_bridge_port(vlan_dev)
-#  endif
 		   ))
 # endif
 			tuple->tag[tag_num++] = htons(vlan_dev_vlan_id(vlan_dev));
@@ -4968,55 +4848,21 @@ static void parse_l2_header(const struct sk_buff *skb, struct ipt_netflow_tuple 
 
 /* packet receiver */
 static unsigned int netflow_target(
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-			   struct sk_buff **pskb,
-#else
 			   struct sk_buff *skb,
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-			   const struct net_device *if_in,
-			   const struct net_device *if_out,
-			   unsigned int hooknum,
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,17)
-			   const struct xt_target *target,
-# endif
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-			   const void *targinfo,
-			   void *userinfo
-# else
-			   const void *targinfo
-# endif
-#else /* since 2.6.28 */
 # define if_in  xt_in(par)
 # define if_out xt_out(par)
-# if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-			   const struct xt_target_param *par
-# else
 			   const struct xt_action_param *par
-# endif
-#endif
 		)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-# ifndef ENABLE_L2
-	/* pskb_may_pull() may modify skb */
-	const
-# endif
-		struct sk_buff *skb = *pskb;
-#endif
 	union {
 		struct iphdr ip;
 		struct ipv6hdr ip6;
 	} _iph, *iph;
 	u_int32_t hash;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,28)
-	const int family = target->family;
-#else
 # ifdef ENABLE_DIRECTION
 	const int hooknum = xt_hooknum(par);
 # endif
 	const int family = xt_family(par);
-#endif
 	struct ipt_netflow_tuple tuple;
 	struct ipt_netflow *nf;
 	__u8 tcp_flags;
@@ -5352,15 +5198,7 @@ do_protocols:
 		nf->ethernetType = skb->protocol;
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
-		rt = (struct rtable *)skb->dst;
-#else /* since 2.6.26 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-		rt = skb->rtable;
-#else /* since 2.6.31 */
 		rt = skb_rtable(skb);
-#endif
-#endif
 #ifdef ENABLE_DIRECTION
 		nf->hooknumx = hooknum + 1;
 #endif
@@ -5437,17 +5275,9 @@ unlock_return:
 }
 
 #ifdef CONFIG_NF_NAT_NEEDED
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
-	/* Below 2.6.31 we don't need to handle callback chain manually. */
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 #define NET_STRUCT struct net *net
 #define NET_ARG net,
 #define nf_conntrack_event_cb net->ct.nf_conntrack_event_cb
-#else
-#define NET_STRUCT void
-#define NET_ARG
-#endif
 static int set_notifier_cb(NET_STRUCT)
 {
 	struct nf_ct_event_notifier *notifier;
@@ -5487,56 +5317,48 @@ static void unset_notifier_cb(NET_STRUCT)
 		printk(KERN_ERR "ipt_NETFLOW: natevents already disabled.\n");
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 #undef nf_conntrack_event_cb
 static struct pernet_operations natevents_net_ops = {
 	.init = set_notifier_cb,
 	.exit = unset_notifier_cb
 };
-#endif
-#endif /* since 2.6.31 */
 
 static DEFINE_MUTEX(events_lock);
 static struct module *netlink_m;
 /* Both functions may be called multiple times. */
 static void register_ct_events(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
 #define NETLINK_M "nf_conntrack_netlink"
-#endif
+
 
 	printk(KERN_INFO "ipt_NETFLOW: enable natevents.\n");
 	mutex_lock(&events_lock);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(5,11,0) || \
+		LINUX_VERSION_CODE < KERNEL_VERSION(5,9,0)
 	/* Pre-load netlink module who will be first notifier
 	 * user, and then hijack nf_conntrack_event_cb from it. */
 	if (
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,2,0)
-	    !rcu_dereference(nf_conntrack_event_cb) ||
-#endif
 	    !find_module(NETLINK_M)) {
 		printk("Loading " NETLINK_M "\n");
 		request_module(NETLINK_M);
 
 	}
+
 	/* Reference netlink module to prevent it's unsafe unload before us. */
 	if (!netlink_m && (netlink_m = find_module(NETLINK_M))) {
 		if (!try_module_get(netlink_m))
 			netlink_m = NULL;
 	}
+#else
+#pragma message "Conntrack events might not work with this kernel version."
+	printk(KERN_WARNING "ipt_NETFLOW: %s is not supported with this kernel version.\n", NETLINK_M);
+	netlink_m = NULL;
+#endif
+
 
 	/* Register ct events callback. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 	register_pernet_subsys(&natevents_net_ops);
-#else
-	set_notifier_cb();
-#endif
-#else /* below v2.6.31 */
-	if (!natevents && nf_conntrack_register_notifier(&ctnl_notifier) < 0)
-		printk(KERN_ERR "Can't register conntrack notifier, natevents disabled.\n");
-	else
-#endif
 	natevents = 1;
 	mutex_unlock(&events_lock);
 }
@@ -5545,19 +5367,11 @@ static void unregister_ct_events(void)
 {
 	printk(KERN_INFO "ipt_NETFLOW: disable natevents.\n");
 	mutex_lock(&events_lock);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,31)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,2,0)
 	unregister_pernet_subsys(&natevents_net_ops);
-#else /* < v3.2 */
-	unset_notifier_cb();
-#endif /* v3.2 */
 	module_put(netlink_m);
 	netlink_m = NULL;
 
 	rcu_assign_pointer(saved_event_cb, NULL);
-#else /* < v2.6.31 */
-	nf_conntrack_unregister_notifier(&ctnl_notifier);
-#endif
 	natevents = 0;
 	mutex_unlock(&events_lock);
 }
@@ -5673,9 +5487,6 @@ static int __init ipt_netflow_init(void)
 	ipt_netflow_cachep = kmem_cache_create("ipt_netflow",
 						sizeof(struct ipt_netflow), 0,
 						0, NULL
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,23)
-						, NULL
-#endif
 					      );
 	if (!ipt_netflow_cachep) {
 		printk(KERN_ERR "Unable to create ipt_netflow slab cache\n");
@@ -5691,24 +5502,11 @@ static int __init ipt_netflow_init(void)
 
 #ifdef CONFIG_SYSCTL
 	ctl_table_renumber(netflow_sysctl_table);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-	netflow_sysctl_header = register_sysctl_table(netflow_net_table
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,21)
-						      , 0 /* insert_at_head */
-#endif
-						      );
-#else /* 2.6.25 */
 # ifdef HAVE_REGISTER_SYSCTL_PATHS
 	netflow_sysctl_header = register_sysctl_paths(netflow_sysctl_path, netflow_sysctl_table);
 # else
 
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
 	netflow_sysctl_header = register_sysctl_sz("net/netflow", netflow_sysctl_table, ARRAY_SIZE(netflow_sysctl_table));
-# else
-	netflow_sysctl_header = register_sysctl("net/netflow", netflow_sysctl_table);
-# endif
-
-# endif
 #endif
 	if (!netflow_sysctl_header) {
 		printk(KERN_ERR "netflow: can't register to sysctl\n");
