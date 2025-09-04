@@ -1153,6 +1153,8 @@ static int flows_dump_seq_show(struct seq_file *seq, void *v)
 		seq_printf(seq, " %d", ntohs(nf->tuple.tag[0]));
 		if (nf->tuple.tag[1])
 			seq_printf(seq, ",%d", ntohs(nf->tuple.tag[1]));
+	} else {
+		seq_printf(seq, " -");
 	}
 #endif
 #if defined(ENABLE_MAC) || defined(ENABLE_VLAN)
