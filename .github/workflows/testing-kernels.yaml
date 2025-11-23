@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kernel-version: [6.12.33, 6.15.2, 6.6.93, 6.1.141, 5.15.185, 5.10.238, 5.4.294]
+        kernel-version: [6.18-rc6, 6.17.8, 6.12.58, 6.6.116, 6.1.158, 5.15.196, 5.10.246, 5.4.301]
     name: Test with ${{ matrix.kernel-version }}    
     steps:
         - name: Checkout repository
