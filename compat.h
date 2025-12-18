@@ -335,10 +335,6 @@ static int sockaddr_match_ipaddr6(const struct sockaddr *sa1, const struct socka
 
 	if (!ipv6_addr_equal(&sin1->sin6_addr, &sin2->sin6_addr))
 		return 0;
-#if 0
-	else if (ipv6_addr_type(&sin1->sin6_addr) & IPV6_ADDR_LINKLOCAL)
-		return sin1->sin6_scope_id == sin2->sin6_scope_id;
-#endif
 	return 1;
 }
 
