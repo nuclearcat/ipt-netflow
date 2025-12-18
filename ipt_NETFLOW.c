@@ -5311,9 +5311,7 @@ static void unset_notifier_cb(NET_STRUCT)
 	notifier = rcu_dereference(nf_conntrack_event_cb);
 	if (notifier == &ctnl_notifier) {
 		if (saved_event_cb == NULL) {
-#ifdef HAVE_NF_CT_EVENT_NOTIFIER_CT_EVENT
-			/* b86c0e6429da ("netfilter: ecache: prepare for event
-			 * notifier merge") */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 			nf_conntrack_unregister_notifier(net);
 #else
 			nf_conntrack_unregister_notifier(NET_ARG &ctnl_notifier);
