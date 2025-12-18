@@ -5223,14 +5223,6 @@ do_protocols:
 			nf->flow_label = (iph->ip6.flow_lbl[0] << 16) |
 			       	(iph->ip6.flow_lbl[1] << 8) | (iph->ip6.flow_lbl[2]);
 		}
-#if 0
-		if (unlikely(debug > 2))
-			printk(KERN_INFO "ipt_NETFLOW: new (%u) %hd:%hd SRC=%u.%u.%u.%u:%u DST=%u.%u.%u.%u:%u\n",
-			       atomic_read(&ipt_netflow_count),
-			       tuple.i_ifc, nf->o_ifc,
-			       NIPQUAD(tuple.src.ip), ntohs(tuple.s_port),
-			       NIPQUAD(tuple.dst.ip), ntohs(tuple.d_port));
-#endif
 	}
 
 	nf->nr_packets++;
@@ -5311,9 +5303,7 @@ static void unset_notifier_cb(NET_STRUCT)
 	notifier = rcu_dereference(nf_conntrack_event_cb);
 	if (notifier == &ctnl_notifier) {
 		if (saved_event_cb == NULL) {
-#ifdef HAVE_NF_CT_EVENT_NOTIFIER_CT_EVENT
-			/* b86c0e6429da ("netfilter: ecache: prepare for event
-			 * notifier merge") */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,15,0)
 			nf_conntrack_unregister_notifier(net);
 #else
 			nf_conntrack_unregister_notifier(NET_ARG &ctnl_notifier);
@@ -5358,7 +5348,6 @@ static void register_ct_events(void)
 			netlink_m = NULL;
 	}
 #else
-#pragma message "Conntrack events might not work with this kernel version."
 	printk(KERN_WARNING "ipt_NETFLOW: %s is not supported with this kernel version.\n", NETLINK_M);
 	netlink_m = NULL;
 #endif

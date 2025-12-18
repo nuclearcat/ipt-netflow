@@ -14,8 +14,26 @@ fatal() {
   exit 1
 }
 
-eval $(grep ^KDIR Makefile | tr -d ' ')
-[ "$KDIR" ] || fatal "KDIR is not found"
+KDIR="${KDIR:-}"
+
+if [ -z "$KDIR" ]; then
+  # Prefer values from makefiles if KDIR wasn't provided via environment /
+  # make command line.
+  if [ -f GNUmakefile ]; then
+    KDIR="$(make -s -f GNUmakefile -pn 2>/dev/null | sed -n 's/^KDIR[[:space:]]*:?=[[:space:]]*//p' | head -n 1 || true)"
+  fi
+fi
+
+if [ -z "$KDIR" ]; then
+  KDIR="$(grep -m1 '^KDIR' Makefile 2>/dev/null | tr -d ' ' | sed 's/^KDIR=//')"
+fi
+
+if [ -z "$KDIR" ] || [ ! -e "$KDIR/Makefile" ]; then
+  # Distro headers path (works without full kernel sources/.config).
+  KDIR="/lib/modules/$(uname -r)/build"
+fi
+
+[ -e "$KDIR/Makefile" ] || fatal "KDIR is not found (tried: GNUmakefile/Makefile/env and fallback $KDIR)"
 
 # if KDIR is not absolute, make it relative to this script
 if [ "${KDIR:0:1}" != "/" ]; then
