@@ -289,6 +289,7 @@ static unsigned int pdu_seq = 0;
 static unsigned int pdu_data_records = 0; /* Data records */
 static unsigned int pdu_flow_records = 0; /* Data records with flows (for stat only) */
 static unsigned int pdu_tpl_records = 0;
+static unsigned int pdu_set_records = 0; /* v9 FlowSet/IPFIX Set records in current PDU */
 static unsigned long pdu_ts_mod; /* ts(jiffies) of last flow */
 static unsigned int pdu_needs_export = 0;
 static union {
@@ -300,6 +301,9 @@ static union {
 static __u8 *pdu_data_used;
 static __u8 *pdu_high_wm; /* high watermark */
 static struct flowset_data *pdu_flowset = NULL; /* current data flowset */
+
+static inline int pdu_have_space(const size_t size);
+static inline unsigned char *pdu_grab_space(const size_t size);
 
 static unsigned long wk_start; /* last start of worker (jiffies) */
 static unsigned long wk_busy;  /* last work busy time (jiffies) */
@@ -317,6 +321,9 @@ static struct timer_list rate_timer;
 
 #define TCP_SYN_ACK 0x12
 #define TCP_FIN_RST 0x05
+
+/* RFC 3954 / RFC 7011: FlowSets/Sets are padded to 32-bit boundary. */
+#define PAD_SIZE 4
 
 static long long sec_prate = 0, sec_brate = 0;
 static long long min_prate = 0, min_brate = 0;
@@ -2612,7 +2619,7 @@ static void netflow_export_pdu_v5(void)
 
 	pdu_seq += pdu_data_records;
 	pdu_count++;
-	pdu_flow_records = pdu_data_records = 0;
+	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 }
 
 /* only called in scan worker path */
@@ -2669,6 +2676,18 @@ static void netflow_export_pdu_v9(void)
 	struct timeval tv;
 	int pdusize;
 
+	/* RFC 3954 requires FlowSets to be padded to 32-bit boundary. */
+	if (pdu_flowset) {
+		int padding = (PAD_SIZE - ntohs(pdu_flowset->length) % PAD_SIZE) % PAD_SIZE;
+		if (padding) {
+			unsigned char *ptr = pdu_have_space(padding) ? pdu_grab_space(padding) : NULL;
+			if (ptr) {
+				memset(ptr, 0, padding);
+				pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
+			}
+		}
+	}
+
 	if (pdu_data_used <= pdu.v9.data)
 		return;
 
@@ -2677,7 +2696,7 @@ static void netflow_export_pdu_v9(void)
 		    pdu_data_records + pdu_tpl_records);
 
 	pdu.v9.version		= htons(9);
-	pdu.v9.nr_records	= htons(pdu_data_records + pdu_tpl_records);
+	pdu.v9.nr_records	= htons(pdu_set_records);
 	pdu.v9.sys_uptime_ms	= htonl(jiffies_to_msecs(jiffies));
 	do_gettimeofday(&tv);
 	pdu.v9.export_time_s	= htonl(tv.tv_sec);
@@ -2693,7 +2712,7 @@ static void netflow_export_pdu_v9(void)
 
 	pdu_seq++;
 	pdu_count++;
-	pdu_flow_records = pdu_data_records = pdu_tpl_records = 0;
+	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 	pdu_data_used = pdu.v9.data;
 	pdu_flowset = NULL;
 }
@@ -2702,6 +2721,18 @@ static void netflow_export_pdu_ipfix(void)
 {
 	struct timeval tv;
 	int pdusize;
+
+	/* RFC 7011 requires Sets to be padded to 32-bit boundary. */
+	if (pdu_flowset) {
+		int padding = (PAD_SIZE - ntohs(pdu_flowset->length) % PAD_SIZE) % PAD_SIZE;
+		if (padding) {
+			unsigned char *ptr = pdu_have_space(padding) ? pdu_grab_space(padding) : NULL;
+			if (ptr) {
+				memset(ptr, 0, padding);
+				pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
+			}
+		}
+	}
 
 	if (pdu_data_used <= pdu.ipfix.data)
 		return;
@@ -2725,7 +2756,7 @@ static void netflow_export_pdu_ipfix(void)
 
 	pdu_seq += pdu_data_records;
 	pdu_count++;
-	pdu_flow_records = pdu_data_records = pdu_tpl_records = 0;
+	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 	pdu_data_used = pdu.ipfix.data;
 	pdu_flowset = NULL;
 }
@@ -3376,12 +3407,14 @@ static void pdu_add_template(struct data_template *tpl)
 	struct flowset_template *ntpl;
 	__be16 *sptr, *fields;
 	size_t added_size = 0;
+	int pad_len;
 
 	/* for options template we also make sure there is enough
 	 * room in the packet for one record, with flowset header */
 	if (tpl->options)
 		added_size = sizeof(struct flowset_data) + tpl->rec_size;
-	ptr = pdu_alloc_export(tpl->tpl_size + added_size);
+	pad_len = (PAD_SIZE - (tpl->tpl_size % PAD_SIZE)) % PAD_SIZE;
+	ptr = pdu_alloc_export(tpl->tpl_size + pad_len + added_size);
 	pdu_rewind_space(added_size);
 	ntpl = (void *)ptr;
 
@@ -3390,7 +3423,7 @@ static void pdu_add_template(struct data_template *tpl)
 		ntpl->flowset_id = protocol == 9? htons(FLOWSET_OPTIONS) : htons(IPFIX_OPTIONS);
 	else
 		ntpl->flowset_id = protocol == 9? htons(FLOWSET_TEMPLATE) : htons(IPFIX_TEMPLATE);
-	ntpl->length	  = htons(tpl->tpl_size);
+	ntpl->length	  = htons(tpl->tpl_size + pad_len);
 	ntpl->template_id = tpl->template_id_n;
 
 	if (tpl->options) {
@@ -3428,11 +3461,15 @@ static void pdu_add_template(struct data_template *tpl)
 		*sptr++ = htons(*fields++);
 	}
 
+	if (pad_len)
+		memset((unsigned char *)ntpl + tpl->tpl_size, 0, pad_len);
+
 	tpl->exported_cnt = pdu_count;
 	tpl->exported_ts = jiffies;
 
 	pdu_flowset = NULL;
 	pdu_tpl_records++;
+	pdu_set_records++;
 }
 
 #ifdef ENABLE_DIRECTION
@@ -3616,8 +3653,6 @@ static inline void add_tpl_field(__u8 *ptr, const int type, const struct ipt_net
 	}
 }
 
-#define PAD_SIZE 4 /* rfc prescribes flowsets to be padded */
-
 /* cache timeout_rate (minutes) in jiffies */
 static inline unsigned long timeout_rate_j(void)
 {
@@ -3667,6 +3702,7 @@ static unsigned char *alloc_record_tpl(struct data_template *tpl)
 		pdu_flowset->flowset_id = tpl->template_id_n;
 		pdu_flowset->length	= htons(sizeof(struct flowset_data));
 		ptr += sizeof(struct flowset_data);
+		pdu_set_records++;
 	}
 	return ptr;
 }
@@ -4198,18 +4234,20 @@ static void netflow_switch_version(const int ver)
 		netflow_export_pdu  = &netflow_export_pdu_v5;
 	} else if (protocol == 9) {
 		pdu_data_used	    = pdu.v9.data;
-		pdu_high_wm	    = (unsigned char *)&pdu + sizeof(pdu.v9);
+		/* keep up to 3 bytes slack for 32-bit padding */
+		pdu_high_wm	    = (unsigned char *)&pdu + sizeof(pdu.v9) - (PAD_SIZE - 1);
 		netflow_export_flow = &netflow_export_flow_tpl;
 		netflow_export_pdu  = &netflow_export_pdu_v9;
 	} else { /* IPFIX */
 		pdu_data_used	    = pdu.ipfix.data;
-		pdu_high_wm	    = (unsigned char *)&pdu + sizeof(pdu.ipfix);
+		/* keep up to 3 bytes slack for 32-bit padding */
+		pdu_high_wm	    = (unsigned char *)&pdu + sizeof(pdu.ipfix) - (PAD_SIZE - 1);
 		netflow_export_flow = &netflow_export_flow_tpl;
 		netflow_export_pdu  = &netflow_export_pdu_ipfix;
 	}
 	pdu.version = htons(protocol);
 	free_templates();
-	pdu_flow_records = pdu_data_records = pdu_tpl_records = 0;
+	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 	pdu_flowset = NULL;
 	printk(KERN_INFO "ipt_NETFLOW protocol version %d (%s) enabled.\n",
 	    protocol, protocol == 10? "IPFIX" : "NetFlow");
