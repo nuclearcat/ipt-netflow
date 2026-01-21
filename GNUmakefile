@@ -6,6 +6,17 @@
 
 include Makefile
 
+# Prevent GNU make from trying to rebuild the current Makefile by running
+# `./configure` implicitly (e.g. under `make -B`). Regenerate explicitly with:
+#   make reconfigure
+Makefile:
+	@:
+
+# Regenerate `Makefile` explicitly.
+reconfigure:
+	./configure ${CARGS}
+.PHONY: reconfigure
+
 # If the configured kernel tree doesn't exist, fall back to the currently
 # running kernel's build directory (typical for distro "linux-headers" packages).
 ifeq ($(wildcard $(KDIR)/Makefile),)

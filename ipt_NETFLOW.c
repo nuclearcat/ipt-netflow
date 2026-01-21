@@ -1536,6 +1536,11 @@ static int destination_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 {
 	int ret;
 
+	if (write && *lenp >= sizeof(destination_buf)) {
+		printk(KERN_WARNING "ipt_NETFLOW: destination string too long (max %zu)\n",
+		       sizeof(destination_buf) - 1);
+		return -E2BIG;
+	}
 	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write) {
 		pause_scan_worker();
@@ -5474,6 +5479,7 @@ static int register_stat(const char *name,
 static int __init ipt_netflow_init(void)
 {
 	int i;
+	int ret;
 
 	printk(KERN_INFO "ipt_NETFLOW version %s, srcversion %s\n",
 		IPT_NETFLOW_VERSION, THIS_MODULE->srcversion);
@@ -5552,7 +5558,12 @@ static int __init ipt_netflow_init(void)
 	if (!destination)
 		destination = destination_buf;
 	if (destination != destination_buf) {
-		strscpy(destination_buf, destination, sizeof(destination_buf));
+		ret = strscpy(destination_buf, destination, sizeof(destination_buf));
+		if (ret < 0) {
+			printk(KERN_ERR "ipt_NETFLOW: destination string too long (max %zu)\n",
+			       sizeof(destination_buf) - 1);
+			goto err_free_sysctl;
+		}
 		destination = destination_buf;
 	}
 	if (add_destinations(destination) < 0)

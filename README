@@ -431,6 +431,18 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
    destination=127.0.0.1:2055%eth0
      - bind socket to interface (eth0). May be useful for multi-homed boxes.
 
+   Notes:
+     - Destination entries can be separated by comma, space, semicolon, tab,
+       or newline.
+     - Bind address and interface can be combined in one entry:
+         destination=127.0.0.1:2055@127.0.0.2%eth0
+     - If a destination entry fails to parse, it is logged and skipped while
+       other entries still apply.
+     - If the interface after '%' does not exist, the destination stays
+       unconnected (see dmesg).
+     - Destination string length is limited to 255 chars; longer values are
+       rejected to avoid truncation.
+
    sampler=deterministic:123
    sampler=random:123
    sampler=hash:123

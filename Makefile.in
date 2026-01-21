@@ -24,7 +24,7 @@ all: ipt_NETFLOW.ko libipt_NETFLOW.so libip6t_NETFLOW.so @SNMPTARGET@
 
 ipt_NETFLOW.ko: version.h ipt_NETFLOW.c ipt_NETFLOW.h compat_def.h compat.h Makefile
 	@echo Compiling $(shell ./version.sh) for kernel $(KVERSION)
-	make -C $(KDIR) M=$(CURDIR) modules
+	make -C $(KDIR) M=$(CURDIR) KOPTS='$(KOPTS)' modules
 	@touch $@
 compat_def.h: gen_compat_def
 	./gen_compat_def > $@-
@@ -32,17 +32,17 @@ compat_def.h: gen_compat_def
 sparse: | version.h ipt_NETFLOW.c ipt_NETFLOW.h compat.h Makefile
 	@rm -f ipt_NETFLOW.ko ipt_NETFLOW.o
 	@echo Compiling for kernel $(KVERSION)
-	make -C $(KDIR) M=$(CURDIR) modules C=1
+	make -C $(KDIR) M=$(CURDIR) KOPTS='$(KOPTS)' modules C=1
 	@touch ipt_NETFLOW.ko
 coverity:
 	coverity-submit -v
 
 minstall: | ipt_NETFLOW.ko
 	@echo " *"
-	make -C $(KDIR) M=$(CURDIR) modules_install INSTALL_MOD_PATH=$(DESTDIR)
+	make -C $(KDIR) M=$(CURDIR) KOPTS='$(KOPTS)' modules_install INSTALL_MOD_PATH=$(DESTDIR)
 	$(DEPMOD)
 mclean:
-	make -C $(KDIR) M=$(CURDIR) clean
+	make -C $(KDIR) M=$(CURDIR) KOPTS='$(KOPTS)' clean
 lclean:
 	-rm -f *.so *_sh.o
 clean: mclean lclean
@@ -103,8 +103,9 @@ uninstall:
 	@if [ "@DKMSINSTALL@" = dinstall ]; then ./install-dkms.sh --uninstall; fi
 	-rm -f $(DESTDIR)$(KINSTDIR)/extra/ipt_NETFLOW.ko
 
-Makefile: Makefile.in configure
-	./configure --make ${CARGS}
+reconfigure:
+	./configure ${CARGS}
+.PHONY: reconfigure
 
 load: all
 	-insmod ipt_NETFLOW.ko active_timeout=5 protocol=9
@@ -125,4 +126,3 @@ reload: unload load
 ChangeLog:
 	gitlog-to-changelog > ChangeLog
 .PHONY: ChangeLog
-
