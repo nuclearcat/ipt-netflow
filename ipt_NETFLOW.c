@@ -3537,18 +3537,26 @@ static inline void add_tpl_field(__u8 *ptr, const int type, const struct ipt_net
 {
 	switch (type) {
 	case IN_BYTES:
+#ifdef CONFIG_NF_NAT_NEEDED
 		if (nf->nat) {
 			put_unaligned_be64(nf->nat->orig_bytes, (__be64 *)ptr);
 		} else {
+#endif
 			put_unaligned_be64(nf->nr_bytes, (__be64 *)ptr);
+#ifdef CONFIG_NF_NAT_NEEDED
 		}
+#endif
 		break;
 	case IN_PKTS:
+#ifdef CONFIG_NF_NAT_NEEDED
 		if (nf->nat) {
 			put_unaligned_be64(nf->nat->orig_packets, (__be64 *)ptr);
 		} else {
+#endif
 			put_unaligned_be64(nf->nr_packets, (__be64 *)ptr);
+#ifdef CONFIG_NF_NAT_NEEDED
 		}
+#endif
 		break;
 	case FIRST_SWITCHED: put_unaligned_be32(jiffies_to_msecs(nf->nf_ts_first), ptr); break;
 	case LAST_SWITCHED:  put_unaligned_be32(jiffies_to_msecs(nf->nf_ts_last), ptr); break;
