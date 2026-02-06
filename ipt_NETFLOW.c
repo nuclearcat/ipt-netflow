@@ -103,7 +103,7 @@
 # endif
 #endif
 
-#define IPT_NETFLOW_VERSION "2.6" /* Note that if you are using git, you
+#define IPT_NETFLOW_VERSION "2.7.0" /* Note that if you are using git, you
 				     will see version in other format. */
 #include "version.h"
 #ifdef GITVERSION
@@ -200,6 +200,10 @@ static unsigned int scan_min = 1;
 static unsigned int scan_max = HZ / 10;
 module_param(scan_min, uint, 0644);
 MODULE_PARM_DESC(scan_min, "Minimal interval between export scans (jiffies)");
+
+static int targets = 1;
+module_param(targets, int, 0444);
+MODULE_PARM_DESC(targets, "enable NETFLOW xtables targets registration");
 
 #ifdef SNMP_RULES
 static char snmp_rules_buf[DST_SIZE] = "";
@@ -5453,6 +5457,33 @@ static struct ipt_target ipt_netflow_reg[] __read_mostly = {
 	},
 };
 
+static int netflow_register_targets(struct xt_target *target, unsigned int n)
+{
+	unsigned int i;
+	int err;
+
+	for (i = 0; i < n; i++) {
+		err = xt_register_target(&target[i]);
+		if (err) {
+			while (i > 0) {
+				i--;
+				xt_unregister_target(&target[i]);
+			}
+			return err;
+		}
+	}
+
+	return 0;
+}
+
+static void netflow_unregister_targets(struct xt_target *target, unsigned int n)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		xt_unregister_target(&target[i]);
+}
+
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
@@ -5629,8 +5660,10 @@ static int __init ipt_netflow_init(void)
 	mod_timer(&rate_timer, jiffies + (HZ * SAMPLERATE));
 
 	peakflows_at = jiffies;
-	if (xt_register_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg)))
-		goto err_stop_timer;
+	if (targets) {
+		if (netflow_register_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg)))
+			goto err_stop_timer;
+	}
 
 #ifdef CONFIG_NF_NAT_NEEDED
 	if (natevents)
@@ -5686,7 +5719,8 @@ static void __exit ipt_netflow_fini(void)
 #ifdef ENABLE_PROMISC
 	switch_promisc(0);
 #endif
-	xt_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
+	if (targets)
+		netflow_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
 #ifdef CONFIG_NF_NAT_NEEDED
 	if (natevents)
 		unregister_ct_events();

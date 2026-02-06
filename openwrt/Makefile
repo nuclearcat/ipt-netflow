@@ -2,10 +2,10 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=ipt-netflow
-PKG_RELEASE:=2
+PKG_RELEASE:=1
 
 PKG_SOURCE_URL:=https://github.com/aabc/$(PKG_NAME).git
-PKG_VERSION:=2.5.1
+PKG_VERSION:=2.7.0
 PKG_SOURCE_VERSION:=v$(PKG_VERSION)
 
 #TO BUILD development version uncomment 2 rows below and remove patches

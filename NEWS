@@ -1,6 +1,13 @@
 ipt-netflow NEWS
 ================
 
+2.7.0 (2026-02-06)
+    * Maintenance updates.
+       - Avoid dependency on `xt_register_targets`/`xt_unregister_targets`
+         exported symbols by registering NETFLOW targets one-by-one.
+       - Add module parameter `targets=0` to allow NAT-events-only mode
+         (`natevents=1`) without NETFLOW xtables target registration.
+
 2.6 (2021-05-15)
     * Minor feature and maintenance release.
        - Compilation compatibility with kernel 5.12.

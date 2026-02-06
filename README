@@ -322,6 +322,11 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
    (it's using so called conntrack events), thus you don't need to set or change
    any iptables rules to use that. You may need to enable kernel config option
    CONFIG_NF_CONNTRACK_EVENTS though (if it isn't already enabled).
+   If you only need NEL and don't want to register NETFLOW xtables targets
+   (for example on systems using nftables only), load module with:
+
+     # modprobe ipt_NETFLOW natevents=1 targets=0
+
    For details on how they are exported for different protocol versions see
    below.
 
@@ -492,6 +497,12 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 
        For technical description of NAT Events see:
          http://tools.ietf.org/html/draft-ietf-behave-ipfix-nat-logging-04
+
+   targets=1
+     - Register NETFLOW xtables targets for IPv4/IPv6 (`-j NETFLOW`).
+       Set to 0 to disable target registration and run in NAT-events-only mode
+       together with `natevents=1`. Default is 1. This is a module-load
+       parameter (no sysctl knob).
 
    inactive_timeout=15
      - export flow after it's inactive for 15 seconds. Default value is 15.
