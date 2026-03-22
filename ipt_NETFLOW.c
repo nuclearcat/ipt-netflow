@@ -1943,7 +1943,7 @@ static struct socket *usock_open_sock(struct ipt_netflow_sock *usock)
 			salen = sizeof(struct sockaddr_in);
 		else if (usock->saddr.ss_family == AF_INET6)
 			salen = sizeof(struct sockaddr_in6);
-		if ((error = sock->ops->bind(sock, (struct sockaddr *)&usock->saddr, salen)) < 0) {
+		if ((error = sock->ops->bind(sock, SOCKADDR_CAST(&usock->saddr), salen)) < 0) {
 			printk(KERN_ERR "ipt_NETFLOW: error binding socket %d\n", -error);
 			goto err_free_sock;
 		}
@@ -1953,7 +1953,7 @@ static struct socket *usock_open_sock(struct ipt_netflow_sock *usock)
 		sock->sk->sk_sndbuf = sndbuf;
 	else
 		sndbuf = sock->sk->sk_sndbuf;
-	error = sock->ops->connect(sock, (struct sockaddr *)&usock->addr, sizeof(usock->addr), 0);
+	error = sock->ops->connect(sock, SOCKADDR_CAST(&usock->addr), sizeof(usock->addr), 0);
 	if (error < 0) {
 		printk(KERN_ERR "ipt_NETFLOW: error connecting UDP socket %d,"
 		    " don't worry, will try reconnect later.\n", -error);
@@ -5541,7 +5541,7 @@ static int __init ipt_netflow_init(void)
 	if (hashsize < LOCK_COUNT)
 		hashsize = LOCK_COUNT;
 	printk(KERN_INFO "ipt_NETFLOW: hashsize %u (%luK)\n", hashsize,
-		hashsize * sizeof(struct hlist_head) / 1024);
+		(unsigned long)(hashsize * sizeof(struct hlist_head) / 1024));
 
 	htable_size = hashsize;
 	htable = alloc_hashtable(htable_size);

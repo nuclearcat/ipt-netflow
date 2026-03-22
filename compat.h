@@ -754,4 +754,10 @@ static inline bool netif_is_bridge_port(const struct net_device *dev)
 # define del_timer_sync timer_delete_sync
 #endif
 
+#ifdef HAVE_SOCKADDR_UNSIZED
+# define SOCKADDR_CAST(x) ((struct sockaddr_unsized *)(x))
+#else
+# define SOCKADDR_CAST(x) ((struct sockaddr *)(x))
+#endif
+
 #endif /* COMPAT_NETFLOW_H */
