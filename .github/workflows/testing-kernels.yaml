@@ -3,41 +3,141 @@ name: Kernels Build and Test
 on:
 # manually triggered workflow
   workflow_dispatch:
+    inputs:
+      kernel_set:
+        description: Kernels to test
+        required: true
+        type: choice
+        default: worktree-matrix
+        options:
+          - worktree-matrix
+          - latest-releases
+          - mainline-next
+          - all
 
 #    pull_request:
 #    branches:
 #      - main
 jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.kernels.outputs.matrix }}
+    steps:
+      - name: Build kernel matrix
+        id: kernels
+        env:
+          KERNEL_SET: ${{ inputs.kernel_set || 'worktree-matrix' }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          kernel_set = os.environ.get("KERNEL_SET") or "worktree-matrix"
+          worktree_versions = [
+              "7.0.12",
+              "6.18.35",
+              "6.12.93",
+              "6.6.142",
+              "6.1.175",
+              "5.15.209",
+              "5.10.258",
+              "5.4.302",
+          ]
+
+          matrix = []
+
+          def add_release(version, name=None, url=None):
+              matrix.append({
+                  "name": name or f"Linux {version}",
+                  "source": "release",
+                  "version": version,
+                  "url": url or "",
+              })
+
+          if kernel_set in ("worktree-matrix", "all"):
+              for version in worktree_versions:
+                  add_release(version)
+
+          if kernel_set in ("latest-releases", "all"):
+              with urllib.request.urlopen("https://www.kernel.org/releases.json") as response:
+                  releases = json.load(response)["releases"]
+
+              seen = {entry["version"] for entry in matrix if entry["source"] == "release"}
+              for release in releases:
+                  version = release.get("version")
+                  source_url = release.get("source")
+                  if not version or not source_url or release.get("iseol") or version in seen:
+                      continue
+                  add_release(version, f"{release.get('moniker', 'release')} {version}", source_url)
+                  seen.add(version)
+
+          if kernel_set in ("mainline-next", "all"):
+              matrix.extend([
+                  {
+                      "name": "mainline master",
+                      "source": "git",
+                      "repo": "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git",
+                      "ref": "master",
+                      "dir": "linux-mainline-master",
+                  },
+                  {
+                      "name": "linux-next master",
+                      "source": "git",
+                      "repo": "https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git",
+                      "ref": "master",
+                      "dir": "linux-next-master",
+                  },
+              ])
+
+          if not matrix:
+              raise SystemExit(f"No kernels selected for kernel_set={kernel_set!r}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("matrix=" + json.dumps(matrix, separators=(",", ":")), file=output)
+          PY
+
   test-kernels:
+    needs: prepare-matrix
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        kernel-version: [7.0.12, 6.18.35, 6.12.93, 6.6.142, 6.1.175, 5.15.209, 5.10.258, 5.4.302]
-    name: Test with ${{ matrix.kernel-version }}    
+        include: ${{ fromJSON(needs.prepare-matrix.outputs.matrix) }}
+    name: Test with ${{ matrix.name }}
     steps:
         - name: Checkout repository
-          uses: actions/checkout@v2
+          uses: actions/checkout@v4
           with:
             fetch-depth: 0  # Fetch all history for all branches and tags
             path: ipt-netflow
         - name: Install dependencies
           run: |
             sudo apt-get update
-            sudo apt-get install -y flex bison libelf-dev bc libxtables-dev pkg-config dkms libxtables-dev pkg-config
-        - name: Download kernel
+            sudo apt-get install -y flex bison libelf-dev bc libxtables-dev pkg-config dkms git wget xz-utils
+        - name: Fetch kernel source
           run: |
-            KERNEL_MAJOR="${{ matrix.kernel-version }}"
-            KERNEL_MAJOR="${KERNEL_MAJOR%%.*}"
-            KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_MAJOR}.x"
-            echo "Downloading kernel from $KERNEL_URL"
-            wget $KERNEL_URL/linux-${{ matrix.kernel-version }}.tar.xz
-        - name: Extract kernel source
-          run: |
-            tar -xf linux-${{ matrix.kernel-version }}.tar.xz
+            set -euo pipefail
+            if [ "${{ matrix.source }}" = "release" ]; then
+              KERNEL_URL="${{ matrix.url }}"
+              if [ -z "$KERNEL_URL" ]; then
+                KERNEL_MAJOR="${{ matrix.version }}"
+                KERNEL_MAJOR="${KERNEL_MAJOR%%.*}"
+                KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_MAJOR}.x/linux-${{ matrix.version }}.tar.xz"
+              fi
+              KERNEL_TARBALL="$(basename "$KERNEL_URL")"
+              echo "Downloading kernel from $KERNEL_URL"
+              wget --progress=dot:giga -O "$KERNEL_TARBALL" "$KERNEL_URL"
+              tar -xf "$KERNEL_TARBALL"
+              echo "KERNEL_DIR=linux-${{ matrix.version }}" >> "$GITHUB_ENV"
+            else
+              git clone --depth 1 --branch "${{ matrix.ref }}" "${{ matrix.repo }}" "${{ matrix.dir }}"
+              echo "KERNEL_DIR=${{ matrix.dir }}" >> "$GITHUB_ENV"
+            fi
         - name: Configure and build kernel
           run: |
-            cd linux-${{ matrix.kernel-version }}
+            cd "$KERNEL_DIR"
             make tinyconfig
             ./scripts/config --enable CONFIG_X86_64
             ./scripts/config --enable CONFIG_NET
@@ -61,5 +161,5 @@ jobs:
           run: |
             ls -la
             cd ipt-netflow
-            ./configure --kdir=../linux-${{ matrix.kernel-version }} --enable-promisc --enable-natevents --enable-macaddress --enable-vlan --enable-direction --enable-sample
+            ./configure --kdir="../$KERNEL_DIR" --enable-promisc --enable-natevents --enable-macaddress --enable-vlan --enable-direction --enable-sample
             make
