@@ -4480,8 +4480,16 @@ static int netflow_scan_and_export(const int flush)
 		list_del(&nel->list);
 		export_nat_event(nel);
 	}
-	if (unlikely(max_nat_events <= 0)) {
-		printk(KERN_WARNING "ipt_NETFLOW: too many NAT events, some might be lost.\n");
+	if (unlikely(!list_empty(&nat_list_export))) {
+		int dropped = 0;
+		struct nat_event *nel, *tmp;
+
+		list_for_each_entry_safe(nel, tmp, &nat_list_export, list) {
+			list_del(&nel->list);
+			kfree(nel);
+			dropped++;
+		}
+		printk(KERN_WARNING "ipt_NETFLOW: too many NAT events, %d dropped.\n", dropped);
 	}
 #endif
 	/* flush flows stored in pdu if there no new flows for too long */

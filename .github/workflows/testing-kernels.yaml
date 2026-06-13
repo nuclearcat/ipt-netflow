@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kernel-version: [6.19.9, 6.17.8, 6.12.58, 6.6.116, 6.1.158, 5.15.196, 5.10.246, 5.4.301]
+        kernel-version: [7.0.12, 6.18.35, 6.12.93, 6.6.142, 6.1.175, 5.15.209, 5.10.258, 5.4.302]
     name: Test with ${{ matrix.kernel-version }}    
     steps:
         - name: Checkout repository
@@ -27,12 +27,9 @@ jobs:
             sudo apt-get install -y flex bison libelf-dev bc libxtables-dev pkg-config dkms libxtables-dev pkg-config
         - name: Download kernel
           run: |
-            # if kernel is 6. we use v6.x, otherwise we use v5.x
-            if [[ "${{ matrix.kernel-version }}" == 6.* ]]; then
-              KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v6.x";
-            else
-              KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v5.x";
-            fi
+            KERNEL_MAJOR="${{ matrix.kernel-version }}"
+            KERNEL_MAJOR="${KERNEL_MAJOR%%.*}"
+            KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v${KERNEL_MAJOR}.x"
             echo "Downloading kernel from $KERNEL_URL"
             wget $KERNEL_URL/linux-${{ matrix.kernel-version }}.tar.xz
         - name: Extract kernel source
