@@ -243,7 +243,7 @@ MODULE_PARM_DESC(engine_id, "Observation Domain ID");
 #define AGGR_SIZE 1024
 static char aggregation_buf[AGGR_SIZE] = "";
 static char *aggregation = aggregation_buf;
-module_param(aggregation, charp, 0400);
+module_param(aggregation, charp, 0444);
 MODULE_PARM_DESC(aggregation, "aggregation ruleset");
 static LIST_HEAD(aggr_n_list);
 static LIST_HEAD(aggr_p_list);
