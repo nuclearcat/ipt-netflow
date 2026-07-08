@@ -327,6 +327,10 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 
      # modprobe ipt_NETFLOW natevents=1 targets=0
 
+   If you want full traffic accounting on a nftables-only system (not just
+   NAT events), see the `hooks=` module parameter below, which captures
+   packets directly on netfilter hooks without any iptables rules.
+
    For details on how they are exported for different protocol versions see
    below.
 
@@ -503,6 +507,45 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
        Set to 0 to disable target registration and run in NAT-events-only mode
        together with `natevents=1`. Default is 1. This is a module-load
        parameter (no sysctl knob).
+
+   hooks=0
+     - Bitmask of netfilter hooks to capture packets on directly, without
+       any iptables rules. This is an alternative to iptables `-j NETFLOW`
+       rules, useful on systems using nftables only. Bit values:
+
+         1   PREROUTING   (all incoming packets, including forwarded)
+         2   INPUT        (packets destined to local host)
+         4   FORWARD      (forwarded packets only)
+         8   OUTPUT       (locally generated packets)
+         16  POSTROUTING  (all outgoing packets, including forwarded)
+
+       Default is 0 (disabled). This is a module-load parameter (no sysctl
+       knob). Both IPv4 and IPv6 hooks are registered. Hooks are registered
+       with the lowest priority, i.e. packets are accounted after all other
+       netfilter processing, so fwmark set by nftables rules is visible to
+       `hooks_mark` filtering (see below). Note that a forwarded packet
+       traverses both PREROUTING and POSTROUTING, so enabling both would
+       account it twice. To account all traffic exactly once use:
+
+         # modprobe ipt_NETFLOW hooks=9 targets=0
+
+       which captures on PREROUTING (transit and inbound traffic) plus
+       OUTPUT (locally generated traffic). Hooks are registered in the init
+       network namespace only. This mode is independent from `targets=` and
+       `natevents=`, and can be combined with them (but note that a packet
+       matching both a NETFLOW rule and a hook is accounted twice).
+
+   hooks_mark=0
+   hooks_mark_mask=0
+     - Only account packets whose fwmark matches: (skb->mark & hooks_mark_mask)
+       == (hooks_mark & hooks_mark_mask). Applies to hooks mode only, doesn't
+       affect xtables targets. Default hooks_mark_mask=0 means no filtering
+       (all packets are accounted). This restores per-rule selectivity with
+       nftables: mark the traffic you want accounted with `meta mark set`,
+       for example:
+
+         # nft add rule inet filter forward ip saddr 10.0.0.0/8 meta mark set 0x1
+         # modprobe ipt_NETFLOW hooks=9 hooks_mark=1 hooks_mark_mask=1 targets=0
 
    inactive_timeout=15
      - export flow after it's inactive for 15 seconds. Default value is 15.

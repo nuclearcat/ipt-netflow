@@ -51,6 +51,7 @@
 #include <net/addrconf.h>
 #include <net/dst.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/netfilter_ipv6.h>
 #include <linux/netfilter_bridge.h>
 #ifndef ENABLE_NAT
 # undef CONFIG_NF_NAT_NEEDED
@@ -204,6 +205,22 @@ MODULE_PARM_DESC(scan_min, "Minimal interval between export scans (jiffies)");
 static int targets = 1;
 module_param(targets, int, 0444);
 MODULE_PARM_DESC(targets, "enable NETFLOW xtables targets registration");
+
+static unsigned int hooks = 0;
+module_param(hooks, uint, 0444);
+MODULE_PARM_DESC(hooks, "bitmask of netfilter hooks to capture packets on"
+    " without iptables rules (1=PREROUTING, 2=INPUT, 4=FORWARD, 8=OUTPUT,"
+    " 16=POSTROUTING), 0=disabled");
+
+static unsigned int hooks_mark = 0;
+module_param(hooks_mark, uint, 0444);
+MODULE_PARM_DESC(hooks_mark, "in hooks mode account only packets with this"
+    " fwmark value (under hooks_mark_mask)");
+
+static unsigned int hooks_mark_mask = 0;
+module_param(hooks_mark_mask, uint, 0444);
+MODULE_PARM_DESC(hooks_mark_mask, "fwmark mask applied for hooks_mark"
+    " comparison, 0 means account all packets");
 
 #ifdef SNMP_RULES
 static char snmp_rules_buf[DST_SIZE] = "";
@@ -5492,6 +5509,56 @@ static void netflow_unregister_targets(struct xt_target *target, unsigned int n)
 		xt_unregister_target(&target[i]);
 }
 
+/* hooks mode: capture packets directly on netfilter hooks, without
+ * any iptables rules, so it works on nftables-only systems too */
+#define HOOKS_MASK_ALL ((1 << NF_INET_NUMHOOKS) - 1)
+
+static unsigned int netflow_nf_hook(void *priv, struct sk_buff *skb,
+    const struct nf_hook_state *state)
+{
+	struct xt_action_param par = { .state = state };
+
+	if (hooks_mark_mask &&
+	    (skb->mark & hooks_mark_mask) != (hooks_mark & hooks_mark_mask))
+		return NF_ACCEPT;
+	netflow_target(skb, &par);
+	return NF_ACCEPT;
+}
+
+static struct nf_hook_ops netflow_hook_ops[NF_INET_NUMHOOKS * 2] __read_mostly;
+static unsigned int netflow_hook_count = 0;
+
+static int netflow_register_hooks(void)
+{
+	unsigned int hooknum;
+	unsigned int n = 0;
+
+	for (hooknum = 0; hooknum < NF_INET_NUMHOOKS; hooknum++) {
+		if (!(hooks & (1 << hooknum)))
+			continue;
+		netflow_hook_ops[n].hook	= netflow_nf_hook;
+		netflow_hook_ops[n].pf		= NFPROTO_IPV4;
+		netflow_hook_ops[n].hooknum	= hooknum;
+		netflow_hook_ops[n].priority	= NF_IP_PRI_LAST;
+		n++;
+		netflow_hook_ops[n].hook	= netflow_nf_hook;
+		netflow_hook_ops[n].pf		= NFPROTO_IPV6;
+		netflow_hook_ops[n].hooknum	= hooknum;
+		netflow_hook_ops[n].priority	= NF_IP6_PRI_LAST;
+		n++;
+	}
+	netflow_hook_count = n;
+	return nf_register_net_hooks(&init_net, netflow_hook_ops, n);
+}
+
+static void netflow_unregister_hooks(void)
+{
+	if (netflow_hook_count) {
+		nf_unregister_net_hooks(&init_net, netflow_hook_ops, netflow_hook_count);
+		netflow_hook_count = 0;
+	}
+}
+
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
@@ -5673,6 +5740,18 @@ static int __init ipt_netflow_init(void)
 			goto err_stop_timer;
 	}
 
+	if (hooks & ~HOOKS_MASK_ALL) {
+		printk(KERN_INFO "ipt_NETFLOW: ignoring invalid bits in hooks=0x%x.\n",
+		    hooks);
+		hooks &= HOOKS_MASK_ALL;
+	}
+	if (hooks) {
+		if (netflow_register_hooks())
+			goto err_unregister_targets;
+		printk(KERN_INFO "ipt_NETFLOW: registered on netfilter hooks 0x%x.\n",
+		    hooks);
+	}
+
 #ifdef CONFIG_NF_NAT_NEEDED
 	if (natevents)
 		register_ct_events();
@@ -5681,6 +5760,9 @@ static int __init ipt_netflow_init(void)
 	printk(KERN_INFO "ipt_NETFLOW is loaded.\n");
 	return 0;
 
+err_unregister_targets:
+	if (targets)
+		netflow_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
 err_stop_timer:
 	_unschedule_scan_worker();
 	netflow_scan_and_export(AND_FLUSH);
@@ -5729,6 +5811,7 @@ static void __exit ipt_netflow_fini(void)
 #endif
 	if (targets)
 		netflow_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
+	netflow_unregister_hooks();
 #ifdef CONFIG_NF_NAT_NEEDED
 	if (natevents)
 		unregister_ct_events();
