@@ -1,6 +1,16 @@
 ipt-netflow NEWS
 ================
 
+2.8.0 (2026-07-08)
+    * New hooks-based capture mode for nftables-only systems.
+       - Module parameter `hooks=` (bitmask of netfilter hooks) registers
+         the packet receiver directly on netfilter hooks (IPv4 and IPv6),
+         enabling full traffic accounting without any iptables rules,
+         e.g. `modprobe ipt_NETFLOW hooks=9 targets=0`.
+       - Optional `hooks_mark=`/`hooks_mark_mask=` parameters restrict
+         hooks-mode accounting to packets with matching fwmark, which can
+         be set selectively from nftables via `meta mark set`.
+
 2.7.0 (2026-02-06)
     * Maintenance updates.
        - Avoid dependency on `xt_register_targets`/`xt_unregister_targets`
