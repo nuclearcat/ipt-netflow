@@ -13,6 +13,7 @@ on:
           - worktree-matrix
           - latest-releases
           - mainline-next
+          - ubuntu-distro
           - all
 
 #    pull_request:
@@ -91,7 +92,9 @@ jobs:
                   },
               ])
 
-          if not matrix:
+          # ubuntu-distro is handled by a separate job with its own static matrix,
+          # so an empty vanilla matrix is expected for that selection.
+          if not matrix and kernel_set != "ubuntu-distro":
               raise SystemExit(f"No kernels selected for kernel_set={kernel_set!r}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
@@ -100,6 +103,7 @@ jobs:
 
   test-kernels:
     needs: prepare-matrix
+    if: needs.prepare-matrix.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -162,4 +166,88 @@ jobs:
             ls -la
             cd ipt-netflow
             ./configure --kdir="../$KERNEL_DIR" --enable-promisc --enable-natevents --enable-macaddress --enable-vlan --enable-direction --enable-sample
+            make
+
+  # Build against Ubuntu's *packaged* kernel headers rather than vanilla kernel.org
+  # sources. Canonical backports netfilter/skb changes into their stable trees, so a
+  # compat.h break can hit Ubuntu users while the vanilla build of the same version
+  # passes. Each entry runs in the matching container so gcc matches the kernel's.
+  test-ubuntu-kernels:
+    if: contains(fromJSON('["ubuntu-distro","all"]'), inputs.kernel_set || 'worktree-matrix')
+    runs-on: ubuntu-latest
+    container: ubuntu:${{ matrix.release }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 20.04 LTS GA
+            release: "20.04"
+            headers: linux-headers-generic
+          - name: Ubuntu 20.04 LTS HWE
+            release: "20.04"
+            headers: linux-headers-generic-hwe-20.04
+          - name: Ubuntu 22.04 LTS GA
+            release: "22.04"
+            headers: linux-headers-generic
+          - name: Ubuntu 22.04 LTS HWE
+            release: "22.04"
+            headers: linux-headers-generic-hwe-22.04
+          - name: Ubuntu 24.04 LTS GA
+            release: "24.04"
+            headers: linux-headers-generic
+          - name: Ubuntu 24.04 LTS HWE
+            release: "24.04"
+            headers: linux-headers-generic-hwe-24.04
+          # 26.04's linux-headers-generic-hwe-26.04 is transitional and resolves to
+          # the same kernel as GA, so there is nothing extra to test yet.
+          - name: Ubuntu 26.04 LTS GA
+            release: "26.04"
+            headers: linux-headers-generic
+    name: Test with ${{ matrix.name }}
+    steps:
+        - name: Install dependencies
+          env:
+            DEBIAN_FRONTEND: noninteractive
+          run: |
+            set -eu
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              build-essential flex bison libelf-dev bc pkg-config \
+              libxtables-dev git ca-certificates "${{ matrix.headers }}"
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 0  # Fetch all history for all branches and tags
+        - name: Resolve kernel version and matching compiler
+          env:
+            DEBIAN_FRONTEND: noninteractive
+          run: |
+            set -eu
+            # The container's uname -r reports the *runner host* kernel, so derive the
+            # version from what the headers package actually dropped in /lib/modules.
+            KVER=$(ls -1 /lib/modules | sort -V | tail -1)
+            test -e "/lib/modules/$KVER/build/Makefile" || {
+              echo "no build tree for $KVER" >&2; exit 1; }
+            echo "Ubuntu ${{ matrix.release }} / ${{ matrix.headers }} -> $KVER"
+
+            # An Ubuntu kernel is not always built with its release's default gcc --
+            # the 6.8 HWE kernel on 22.04 wants gcc-12 while jammy defaults to gcc-11.
+            # Left alone, kbuild invokes a compiler that isn't installed (Error 127),
+            # or the default gcc rejects flags the kernel was configured with
+            # (-ftrivial-auto-var-init=zero). Install the recorded compiler and make
+            # it the default so kbuild's `CC = $(CROSS_COMPILE)gcc` picks it up.
+            CC_BIN=$(sed -n 's/^CONFIG_CC_VERSION_TEXT="\([^ "]*\).*/\1/p' "/lib/modules/$KVER/build/.config")
+            echo "kernel was built with: ${CC_BIN:-unknown} (container default: gcc $(gcc -dumpversion))"
+            case "$CC_BIN" in
+              *-gcc-[0-9]*)
+                GCC_PKG="gcc-${CC_BIN##*-}"
+                apt-get install -y --no-install-recommends "$GCC_PKG"
+                update-alternatives --install /usr/bin/gcc gcc "/usr/bin/$GCC_PKG" 100
+                ;;
+            esac
+            echo "building with gcc $(gcc -dumpversion)"
+            echo "KVER=$KVER" >> "$GITHUB_ENV"
+        - name: Build ipt-netflow
+          run: |
+            ./configure --kver="$KVER" --enable-promisc --enable-natevents --enable-macaddress --enable-vlan --enable-direction --enable-sample
             make
