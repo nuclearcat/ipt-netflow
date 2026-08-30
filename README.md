@@ -61,8 +61,10 @@ by <denys.f@collabora.com> since 2025.
 
 ## Obtaining the Latest Version
 
-   $ git clone git://github.com/nuclearcat/ipt-netflow.git ipt-netflow
-   $ cd ipt-netflow
+```sh
+git clone https://github.com/nuclearcat/ipt-netflow.git
+cd ipt-netflow
+```
 
 
 ## Installation
@@ -143,32 +145,30 @@ by <denys.f@collabora.com> since 2025.
 
 ### 4. Build the module
 
-      ~/ipt-netflow# ./configure
-      ~/ipt-netflow# make all install
-      ~/ipt-netflow# depmod
+```sh
+./configure
+make all install
+depmod
+```
 
-   This will install kernel module and iptables specific library.
+This installs the kernel module and iptables-specific library.
 
-   Troubleshooting:
+Troubleshooting:
 
-     a) Sometimes you will want to add CC=gcc-3 to make command.
-     Example: make CC=gcc-3.3
+- Some older systems require an explicit compiler, for example
+  `make CC=gcc-3.3`.
+- Build against kernel sources that match the kernel you will run. If you use a
+  `kernel-devel` package, confirm that its version matches your kernel package.
+- If sources are in non-standard locations, run `./configure --help` for the
+  available path options.
+- To run `irqtop` on Debian 8, install its dependencies:
 
-     b) Compile module with actual kernel source compiled.
-     I.e. first compile kernel and boot into it, and then compile module.
-     If you are using kernel-devel package check that its version matches
-     your kernel package.
+  ```sh
+  apt-get install ruby ruby-dev ncurses-dev
+  gem install curses
+  ```
 
-     c) If you have sources in non-standard places or configure isn't able to
-     find something run ./configure --help to see how to specify paths manually.
-
-     d) To run irqtop on Debian 8 you may need to install:
-
-       # apt-get install ruby ruby-dev ncurses-dev
-       # gem install curses
-
-     z) If all fails create ticket at
-          https://github.com/nuclearcat/ipt-netflow/issues
+- If the build still fails, [open an issue](https://github.com/nuclearcat/ipt-netflow/issues).
 
 ### 5. Load the module
 
@@ -178,93 +178,61 @@ target in iptables. See the next section.
 
 ## Configure Options
 
-   Configure script allows to enable or disable optional features:
+The configure script supports these optional features:
 
-     --enable-natevents
-         enables natevents (NEL) support, (this and option will require
-	 conntrack support to be enabled into kernel and conntack
-         module (nf_conntrack) loaded before ipt_NETFLOW. Usually this is
-         done automatically because of `depmod`, but if you don't run
-         `make install` you'll need to load nf_conntrack manually.
-         Read below for explanation of natevents.
-
-     --enable-sampler
-         enables flow sampler. Read below for explanation of its configuration
-	 option.
-
-     --enable-sampler=hash
-         additionally enables 'hash' sampler.
-
-     --disable-snmp-agent
-         disables building net-snmp agent module, which is enabled by default.
-
-     --enable-snmp-rules
-         enables SNMP-index conversion rules. Read below for explanation
-         of snmp-rules.
-
-     --enable-macaddress
-         enables exporting of src and dst MAC addresses for every flow
-         in v9/IPFIX. Difference in any of MAC address will be accounted
-         as different flow. I.e. MAC addresses will be part of flow key.
-
-     --enable-vlan
-         enables exporting of dot1q VLAN Ids and Priorities for every flow
-         in v9/IPFIX. It supports outer and second dot1q tags if present.
-
-         Any of two previous options will enable exporting of Ethernet Packet
-         Type, ethernetType(256).
-
-     --enable-direction
-         enables exporting of flowDirection(61) Element for v9/IPFIX.
-
-         Packets captured in PREROUTING and INPUT chains will be accounted as
-         ingress flows(0), in OUTPUT and POSTROUTING as egress flows(1), and
-         in FORWARD will have flowDirection set to undefined value 255.
-
-     --enable-aggregation
-         enables aggregation rules. Read below for explanation of aggregation.
-
-     --disable-dkms
-         disable creating dkms.conf and auto-install module into DKMS tree.
-
-     --disable-dkms-install
-         only disable auto-install into DKMS, but still create dkms.conf, in
-         case you will want to install it manually.
-
-     --enable-physdev
-	 Export ingressPhysicalInterface(252) and egressPhysicalInterface(253)
-	 (relevant for bridges) in V9 and IPFIX. If your collector does not
-	 support these Elements but you still need physdevs then use
-	 --enable-physdev-override, in that case physdevs will override normal
-	 interface numbers ingressInterface(10) and egressInterface(14).
-
-     --enable-promisc
-	 Enables capturing of promiscuous packets into raw/PREROUTING chain.
-	 See README.promisc Solution 1 for usage details and example.
-
-     --promisc-mpls
-	 Enables MPLS label stack decapsulation for promiscuous packets. (For
-	 IPv4 and IPv6 packets only). This also enables MPLS-aware NetFlow (v9
-	 and IPFIX), you may wish to specify with --promisc-mpls=n how much MPLS
-	 labels you want to be recorded and exported (default is 3, maximum is
-	 10, set to 0 to not report anything).
+- `--enable-natevents` — Enable NetFlow Event Logging (NEL). This requires
+  conntrack support and the `nf_conntrack` module, which is normally loaded
+  automatically after `depmod`. If you do not run `make install`, load it
+  manually.
+- `--enable-sampler` — Enable flow sampling.
+- `--enable-sampler=hash` — Also enable hash-based flow sampling.
+- `--disable-snmp-agent` — Disable the net-snmp agent, which is built by
+  default.
+- `--enable-snmp-rules` — Enable SNMP-index conversion rules.
+- `--enable-macaddress` — Export source and destination MAC addresses for
+  NetFlow v9/IPFIX and include them in the flow key.
+- `--enable-vlan` — Export outer and customer dot1q VLAN IDs and priorities.
+  Enabling this or `--enable-macaddress` also exports the Ethernet packet type
+  as `ethernetType(256)`.
+- `--enable-direction` — Export `flowDirection(61)` for NetFlow v9/IPFIX.
+  PREROUTING and INPUT are ingress, OUTPUT and POSTROUTING are egress, and
+  FORWARD is undefined (`255`).
+- `--enable-aggregation` — Enable aggregation rules.
+- `--disable-dkms` — Do not create `dkms.conf` or install into the DKMS tree.
+- `--disable-dkms-install` — Create `dkms.conf`, but skip automatic DKMS
+  installation.
+- `--enable-physdev` — Export `ingressPhysicalInterface(252)` and
+  `egressPhysicalInterface(253)` for bridges. Use
+  `--enable-physdev-override` if physical interfaces should replace the normal
+  ingress and egress interface fields.
+- `--enable-promisc` — Capture promiscuous packets in raw/PREROUTING. See
+  [README.promisc](README.promisc) for usage details.
+- `--promisc-mpls[=n]` — Enable MPLS decapsulation and MPLS-aware NetFlow for
+  IPv4 and IPv6. The default exported label depth is 3, the maximum is 10, and
+  0 disables label reporting.
 
 
 ## Running
 
 1. You can load module directly by insmod like this:
 
-     # insmod ipt_NETFLOW.ko destination=127.0.0.1:2055 debug=1
+   ```sh
+   insmod ipt_NETFLOW.ko destination=127.0.0.1:2055 debug=1
+   ```
 
    Or if properly installed (make install; depmod) by this:
 
-     # modprobe ipt_NETFLOW destination=127.0.0.1:2055
+   ```sh
+   modprobe ipt_NETFLOW destination=127.0.0.1:2055
+   ```
 
    See, you may add options in insmod/modprobe command line, or add
    them in /etc/modprobe.conf or /etc/modprobe.d/ipt_NETFLOW.conf
    like thus:
 
-     options ipt_NETFLOW destination=127.0.0.1:2055 protocol=9 natevents=1
+   ```text
+   options ipt_NETFLOW destination=127.0.0.1:2055 protocol=9 natevents=1
+   ```
 
 2. Statistics is in /proc/net/stat/ipt_netflow
    Machine readable statistics is in /proc/net/stat/ipt_netflow_snmp
@@ -273,8 +241,10 @@ target in iptables. See the next section.
 
 3. You can view parameters and control them via sysctl, example:
 
-     # sysctl net.netflow
-     # sysctl net.netflow.hashsize=32768
+   ```sh
+   sysctl net.netflow
+   sysctl net.netflow.hashsize=32768
+   ```
 
    Note: For after-reboot configuration I recommend to store module parameters
    in modprobe configs instead of storing them in /etc/sysctl.conf, as it's
@@ -283,9 +253,11 @@ target in iptables. See the next section.
 
 4. Example of directing all IPv4 traffic into the module:
 
-     # iptables -I FORWARD -j NETFLOW
-     # iptables -I INPUT -j NETFLOW
-     # iptables -I OUTPUT -j NETFLOW
+   ```sh
+   iptables -I FORWARD -j NETFLOW
+   iptables -I INPUT -j NETFLOW
+   iptables -I OUTPUT -j NETFLOW
+   ```
 
    Note: It is preferable (because easier to understand) to _insert_
    NETFLOW target at the top of the chain, otherwise not all traffic may
@@ -297,21 +269,27 @@ target in iptables. See the next section.
 5. If you want to account IPv6 traffic you should use protocol 9 or 10.
    Example of directing all IPv6 traffic into the module:
 
-     # sysctl net.netflow.protocol=10
-     # ip6tables -I FORWARD -j NETFLOW
-     # ip6tables -I INPUT -j NETFLOW
-     # ip6tables -I OUTPUT -j NETFLOW
+   ```sh
+   sysctl net.netflow.protocol=10
+   ip6tables -I FORWARD -j NETFLOW
+   ip6tables -I INPUT -j NETFLOW
+   ip6tables -I OUTPUT -j NETFLOW
+   ```
 
    Note: First enable right version of protocol and after that add ip6tables
      rules, otherwise you will get errors in dmesg.
 
 6. If you want to account NAT events (NEL):
 
-     # sysctl net.netflow.natevents=1
+   ```sh
+   sysctl net.netflow.natevents=1
+   ```
 
    Also make sure that conntrack events are enabled in your kernel by sysctl:
 
-     # sysctl net.netfilter.nf_conntrack_events=1
+   ```sh
+   sysctl net.netfilter.nf_conntrack_events=1
+   ```
 
 
    Note that natevents feature is completely independent from traffic accounting
@@ -321,7 +299,9 @@ target in iptables. See the next section.
    If you only need NEL and don't want to register NETFLOW xtables targets
    (for example on systems using nftables only), load module with:
 
-     # modprobe ipt_NETFLOW natevents=1 targets=0
+   ```sh
+   modprobe ipt_NETFLOW natevents=1 targets=0
+   ```
 
    If you want full traffic accounting on a nftables-only system (not just
    NAT events), see the `hooks=` module parameter below, which captures
@@ -333,35 +313,44 @@ target in iptables. See the next section.
 7. For SNMP support you will need to add this command into snmpd.conf to
    enable IPT-NETFLOW-MIB in SNMP agent:
 
-      dlmod netflow /usr/lib/snmp/dlmod/snmp_NETFLOW.so
+   ```text
+   dlmod netflow /usr/lib/snmp/dlmod/snmp_NETFLOW.so
+   ```
 
    Restart snmpd for changes to take effect. Don't forget to properly configure
    access control. Example simplest configuration may looks like (note that this
    is whole /etc/snmp/snmpd.conf):
 
-      rocommunity public 127.0.0.1
-      dlmod netflow /usr/lib/snmp/dlmod/snmp_NETFLOW.so
+   ```text
+   rocommunity public 127.0.0.1
+   dlmod netflow /usr/lib/snmp/dlmod/snmp_NETFLOW.so
+   ```
 
    Note, that this config will also allow _full_ read-only access to the whole
    linux MIB. To install IPT-NETFLOW-MIB locally, copy file IPT-NETFLOW-MIB.my
    into ~/.snmp/mibs/
 
-   * Detailed example of SNMP configuration is there:
-   * https://github.com/nuclearcat/ipt-netflow/wiki/Configuring-SNMP-access
+   See the [detailed SNMP configuration example](https://github.com/nuclearcat/ipt-netflow/wiki/Configuring-SNMP-access).
 
    To check that MIB is installed well you may issue:
 
-     $ snmptranslate -m IPT-NETFLOW-MIB -IR -Tp iptNetflowMIB
+   ```sh
+   snmptranslate -m IPT-NETFLOW-MIB -IR -Tp iptNetflowMIB
+   ```
 
    This should output IPT-NETFLOW-MIB in tree form.
 
    To check that snmp agent is working well issue:
 
-     $ snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowMIB
+   ```sh
+   snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowMIB
+   ```
 
    Should output full MIB. If MIB is not installed try:
 
-     $ snmpget -v 1 -c public 127.0.0.1 .1.3.6.1.4.1.37476.9000.10.1.1.1.1.0
+   ```sh
+   snmpget -v 1 -c public 127.0.0.1 .1.3.6.1.4.1.37476.9000.10.1.1.1.1.0
+   ```
 
    Which should output STRING: "ipt_NETFLOW".
 
@@ -385,276 +374,235 @@ target in iptables. See the next section.
 
    - Module info (similar to modinfo, SNMPv1 is ok for following two objects):
 
-     $ snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowModule
+     ```sh
+     snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowModule
+     ```
 
    - Read-write sysctl-like parameters (yes, they are writable via snmpset, you
      may need to configure write access to snmpd, though):
 
-     $ snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowSysctl
+     ```sh
+     snmpwalk -v 1 -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowSysctl
+     ```
 
    - Global performance stat of the module (note -v2c, because rest of the
      objects require SNMP v2c or SNMP v3):
 
-     $ snmpwalk -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowTotals
+     ```sh
+     snmpwalk -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowTotals
+     ```
 
    - Per-CPU (metering) and per-socket (exporting) statistics in table format:
 
-     $ snmptable -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowCpuTable
-     $ snmptable -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowSockTable
+     ```sh
+     snmptable -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowCpuTable
+     snmptable -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowSockTable
+     ```
 
 
 ## Options
 
-   Options can be passed as parameters to module or changed dynamically
-   via  sysctl net.netflow  or  IPT-NETFLOW-MIB::iptNetflowSysctl
+Options can be passed as module parameters or changed dynamically through
+`net.netflow` sysctls or `IPT-NETFLOW-MIB::iptNetflowSysctl`.
 
-   protocol=5
-     - what version of NetFlow protocol to use. Default is 5.
-       You can choose from 5, 9, or 10 (where 10 is IPFIX). If you plan
-       to account IPv6 traffic you should use protocol 9 or 10 (IPFIX),
-       because NetFlow v5 isn't compatible with IPv6.
+### `protocol=5`
 
-   destination=127.0.0.1:2055
-     - where to export netflow, to this ip address. Port is optional, default
-       is 2055. You will see this connection in netstat like this:
+Select NetFlow v5 (`5`), NetFlow v9 (`9`), or IPFIX (`10`). The default is
+NetFlow v5. Use v9 or IPFIX when accounting for IPv6 traffic.
 
-       udp 0 0 127.0.0.1:32772 127.0.0.1:2055 ESTABLISHED 
+### `destination=HOST[:PORT]`
 
-   destination=[2001:db8::1]:2055
-     - export target using IPv6 address. Brackets are optional, but otherwise
-       you should delimit port with 'p' or '#' character.
+Set one or more collectors. The default port is 2055. Supported forms include:
 
-   destination=127.0.0.1:2055,192.0.0.1:2055
-     - mirror flows to two (can be more) addresses, separate addresses
-       with comma.
+- `destination=127.0.0.1:2055` — IPv4 collector.
+- `destination=[2001:db8::1]:2055` — IPv6 collector. Brackets are optional if
+  the port uses the `p` or `#` delimiter.
+- `destination=127.0.0.1:2055,192.0.0.1:2055` — Mirror flows to multiple
+  collectors.
+- `destination=127.0.0.1:2055@127.0.0.2` — Bind to a source address.
+- `destination=127.0.0.1:2055%eth0` — Bind to an interface.
+- `destination=127.0.0.1:2055@127.0.0.2%eth0` — Bind to both a source address
+  and an interface.
 
-   destination=127.0.0.1:2055@127.0.0.2
-     - bind socket to address (127.0.0.2).
+Separate entries with commas, spaces, semicolons, tabs, or newlines. Invalid
+entries are logged and skipped while valid entries remain active. A destination
+whose interface does not exist remains unconnected. The complete destination
+string is limited to 255 characters.
 
-   destination=127.0.0.1:2055%eth0
-     - bind socket to interface (eth0). May be useful for multi-homed boxes.
+### `sampler=MODE:N`
 
-   Notes:
-     - Destination entries can be separated by comma, space, semicolon, tab,
-       or newline.
-     - Bind address and interface can be combined in one entry:
-         destination=127.0.0.1:2055@127.0.0.2%eth0
-     - If a destination entry fails to parse, it is logged and skipped while
-       other entries still apply.
-     - If the interface after '%' does not exist, the destination stays
-       unconnected (see dmesg).
-     - Destination string length is limited to 255 chars; longer values are
-       rejected to avoid truncation.
+Enable flow sampling (RFC 7014), where `N` is a population size from 2 through
+16383. This is flow sampling, not packet sampling (PSAMP). Set the value to `0`
+or empty to disable it.
 
-   sampler=deterministic:123
-   sampler=random:123
-   sampler=hash:123
-     - enables Flow Sampling. To disable set to the empty value or to `0`.
-       Note, that this is flow sampling (as of RFC 7014), not packet
-       sampling (PSAMP).
+- `deterministic:N` — Select every Nth observed flow (systematic count-based
+  sampling in IPFIX).
+- `random:N` — Randomly select one out of N flows.
+- `hash:N` — Select flows pseudo-randomly from their flow-key hash.
 
-       There is three sampling modes:
+Deterministic and random sampling happen late in export processing, reducing
+collector load but not module resource use. Hash sampling discards flows early,
+reducing module CPU and memory use. All modes export the required sampling
+metadata for NetFlow v5, v9, and IPFIX; hash sampling is reported to collectors
+as random sampling.
 
-         deterministic:  select each N-th observed flow; in IPFIX this mode
-                         is called Systematic count-based Sampling;
-         random:         select randomly one out of N flows.
-         hash:           select hash-randomly one out of N flows.
+### `natevents=1`
 
-       Number after colon is population size N, with valid values 2-16383.
-       (This 16383 limit is for compatibility with NetFlow v5.)
-         Using 'deterministic' and 'random' sampling will not reduce resource
-       usage caused by the module, because flows are sampled late in exporting
-       process. This will reduces amount of flows which go to the collector,
-       thus, reducing load on the collector.
-         On the other hand, using 'hash' sampling will reduce CPU and memory
-       load caused by the module, because flows are discarded early in the
-       processing chain. They are discarded almost like in random sampler,
-       except that pseudo-random value is depend on the Flow Key hash for each
-       packet.
-         All required NetFlow/IPFIX information to signal use of sampling is
-       also sent to the collector. 'Hash' sampling will be presented as 'random'
-       sampling to the collector, because of their similarity.
-       Note, that Flow Sampling is compatible with NetFlow v5, v9, and IPFIX.
+Collect NAT translation events as NetFlow Event Logging (NEL) for NetFlow
+v9/IPFIX, or as dummy flows for NetFlow v5. The default is `0`.
 
-   natevents=1
-     - Collect and send NAT translation events as NetFlow Event Logging (NEL)
-       for NetFlow v9/IPFIX, or as dummy flows compatible with NetFlow v5.
-       Default is 0 (don't send).
+For NetFlow v5 dummy flows:
 
-       For NetFlow v5 protocol meaning of fields in dummy flows are such:
-         Src IP, Src Port  is Pre-nat source address.
-         Dst IP, Dst Port  is Post-nat destination address.
-           - These two fields made equal to data flows caught in FORWARD chain.
-         Nexthop, Src AS  is Post-nat source address for SNAT. Or,
-         Nexthop, Dst AS  is Pre-nat destination address for DNAT.
-         TCP Flags is SYN+SCK for start event, RST+FIN for stop event.
-         Pkt/Traffic size is 0 (zero), so it won't interfere with accounting.
+- Source IP and port contain the pre-NAT source.
+- Destination IP and port contain the post-NAT destination.
+- Next hop and source AS contain the post-NAT source for SNAT.
+- Next hop and destination AS contain the pre-NAT destination for DNAT.
+- TCP flags contain SYN+ACK for start events and RST+FIN for stop events.
+- Packet and traffic sizes are zero, so events do not affect accounting.
 
-       Natevents are compilation disabled by default, to enable you will need to
-       add --enable-natevents option to ./configure script.
+Compile this feature with `./configure --enable-natevents`. See the
+[NAT logging draft](https://datatracker.ietf.org/doc/html/draft-ietf-behave-ipfix-nat-logging-04)
+for the protocol details.
 
-       For technical description of NAT Events see:
-         http://tools.ietf.org/html/draft-ietf-behave-ipfix-nat-logging-04
+### `targets=1`
 
-   targets=1
-     - Register NETFLOW xtables targets for IPv4/IPv6 (`-j NETFLOW`).
-       Set to 0 to disable target registration and run in NAT-events-only mode
-       together with `natevents=1`. Default is 1. This is a module-load
-       parameter (no sysctl knob).
+Register IPv4/IPv6 NETFLOW xtables targets (`-j NETFLOW`). Set this module-load
+parameter to `0` with `natevents=1` for NAT-events-only operation. The default
+is `1`.
 
-   hooks=0
-     - Bitmask of netfilter hooks to capture packets on directly, without
-       any iptables rules. This is an alternative to iptables `-j NETFLOW`
-       rules, useful on systems using nftables only. Bit values:
+### `hooks=0`
 
-         1   PREROUTING   (all incoming packets, including forwarded)
-         2   INPUT        (packets destined to local host)
-         4   FORWARD      (forwarded packets only)
-         8   OUTPUT       (locally generated packets)
-         16  POSTROUTING  (all outgoing packets, including forwarded)
+Capture packets directly on netfilter hooks without iptables rules. This is
+useful on nftables-only systems. The bitmask values are:
 
-       Default is 0 (disabled). This is a module-load parameter (no sysctl
-       knob). Both IPv4 and IPv6 hooks are registered. Hooks are registered
-       with the lowest priority, i.e. packets are accounted after all other
-       netfilter processing, so fwmark set by nftables rules is visible to
-       `hooks_mark` filtering (see below). Note that a forwarded packet
-       traverses both PREROUTING and POSTROUTING, so enabling both would
-       account it twice. To account all traffic exactly once use:
+| Bit | Hook | Traffic |
+| ---: | --- | --- |
+| 1 | PREROUTING | All incoming packets, including forwarded traffic |
+| 2 | INPUT | Packets destined for the local host |
+| 4 | FORWARD | Forwarded packets only |
+| 8 | OUTPUT | Locally generated packets |
+| 16 | POSTROUTING | All outgoing packets, including forwarded traffic |
 
-         # modprobe ipt_NETFLOW hooks=9 targets=0
+The default is `0` (disabled). Both IPv4 and IPv6 hooks run after other
+netfilter processing, so fwmarks set by nftables are visible. Because forwarded
+packets traverse both PREROUTING and POSTROUTING, enabling both counts them
+twice. To account for all traffic exactly once, use PREROUTING plus OUTPUT:
 
-       which captures on PREROUTING (transit and inbound traffic) plus
-       OUTPUT (locally generated traffic). Hooks are registered in the init
-       network namespace only. This mode is independent from `targets=` and
-       `natevents=`, and can be combined with them (but note that a packet
-       matching both a NETFLOW rule and a hook is accounted twice).
+```sh
+modprobe ipt_NETFLOW hooks=9 targets=0
+```
 
-   hooks_mark=0
-   hooks_mark_mask=0
-     - Only account packets whose fwmark matches: (skb->mark & hooks_mark_mask)
-       == (hooks_mark & hooks_mark_mask). Applies to hooks mode only, doesn't
-       affect xtables targets. Default hooks_mark_mask=0 means no filtering
-       (all packets are accounted). This restores per-rule selectivity with
-       nftables: mark the traffic you want accounted with `meta mark set`,
-       for example:
+Hooks are registered only in the initial network namespace. Hooks mode is
+independent from `targets=` and `natevents=`; packets matching both a NETFLOW
+rule and a hook are counted twice.
 
-         # nft add rule inet filter forward ip saddr 10.0.0.0/8 meta mark set 0x1
-         # modprobe ipt_NETFLOW hooks=9 hooks_mark=1 hooks_mark_mask=1 targets=0
+### `hooks_mark=0` and `hooks_mark_mask=0`
 
-   inactive_timeout=15
-     - export flow after it's inactive for 15 seconds. Default value is 15.
+In hooks mode, account only packets matching:
 
-   active_timeout=1800
-     - export flow after it's active for 1800 seconds (30 minutes). Default
-       value is 1800.
+```text
+(skb->mark & hooks_mark_mask) == (hooks_mark & hooks_mark_mask)
+```
 
-   refresh-rate=20
-     - for NetFlow v9 and IPFIX it's rate how frequently to re-send templates
-       (per packets). You probably don't need to change default (which is 20).
+A zero mask (the default) disables filtering. To restore per-rule selectivity
+with nftables, mark selected traffic and match that mark in the module:
 
-   timeout-rate=30
-     - for NetFlow v9 and IPFIX it's rate when to re-send old templates (in
-       minutes). No need to change it.
+```sh
+nft add rule inet filter forward ip saddr 10.0.0.0/8 meta mark set 0x1
+modprobe ipt_NETFLOW hooks=9 hooks_mark=1 hooks_mark_mask=1 targets=0
+```
 
-   debug=0
-     - debug level (none).
+### `inactive_timeout=15`
 
-   sndbuf=number
-     - size of output socket buffer in bytes. I recommend you to put higher
-       value if you experience netflow packet drops (can be seen in statistics
-       as 'sock: fail' number.)
-       Default value is system default.
+Export a flow after this many seconds of inactivity. The default is `15`.
 
-   hashsize=number
-     - Hash table bucket size. Used for performance tuning.
-       Abstractly speaking, it should be minimum two times bigger than flows
-       you usually have, but not need to.
-       Default is system memory dependent small enough value.
+### `active_timeout=1800`
 
-   maxflows=2000000
-     - Maximum number of flows to account. It's here to prevent DOS attacks.
-       After this limit is reached new flows will not be accounted. Default is
-       2000000, zero is unlimited.
+Export a flow after this many seconds of activity. The default is `1800`
+(30 minutes).
 
-   aggregation=string..
-     - Few aggregation rules (or some say they are rule.)
+### `refresh-rate=20`
 
-       Buffer for aggregation string 1024 bytes, and sysctl limit it
-         to ~700 bytes, so don't write there a lot.
-       Rules worked in definition order for each packet, so don't
-         write them a lot again.
-       Rules applied to both directions (dst and src).
-       Rules tried until first match, but for netmask and port
-          aggregations separately.
-       Delimit them with commas.
+For NetFlow v9/IPFIX, resend templates after this many packets. The default is
+`20`.
 
-       Rules are of two kinds: for netmask aggregation
-          and port aggregation:
+### `timeout-rate=30`
 
-       a) Netmask aggregation example: 192.0.0.0/8=16
-       Which mean to strip addresses matching subnet 192.0.0.0/8 to /16.
+For NetFlow v9/IPFIX, resend old templates after this many minutes. The default
+is `30`.
 
-       b) Port aggregation example: 80-89=80
-       Which mean to replace ports from 80 to 89 with 80.
+### `debug=0`
 
-       Full example:
-          aggregation=192.0.0.0/8=16,10.0.0.0/8=16,80-89=80,3128=80
+Set the debug level. The default is `0` (disabled).
 
-       Aggregation rules are enabled by default, if you feel you don't need them
-       you may add --disable-aggregation to ./configure script.
+### `sndbuf=number`
 
-   snmp-rules=string...
-     - Few SNMP-index conversion rules similar to fproble-ulog.
+Set the output socket buffer size in bytes. Increase it if the module statistics
+report packet drops as `sock: fail`. The default is the system socket-buffer
+size.
 
-       Quoting man fprobe-ulog:
+### `hashsize=number`
 
-         "Comma separated list of interface name to SNMP-index conversion
-         rules.  Each rule consists of interface base name and SNMP-index
-         base separated by colon (e.g. ppp:200). Final SNMP-index is  sum
-         of corresponding SNMP-index base and interface number.
-         In the above example SNMP-index of interface ppp11 is 211.
+Set the flow hash-table bucket count. For performance, a useful starting point
+is at least twice the usual active-flow count. The default depends on system
+memory.
 
-         If interface  name  did not fit to any of conversion rules then
-         SNMP-index will be taken from kernel."
+### `maxflows=2000000`
 
-       This implementation isn't optimized for performance (no rule caching
-       or hashing), but should be fast if rules list are short.
+Limit the number of simultaneously accounted flows to protect against resource
+exhaustion. New flows are ignored after the limit is reached. The default is
+2,000,000; zero means unlimited.
 
-       Rules are parsed in order from first to last until first match.
+### `aggregation=RULES`
 
-       snmp-rules are compilation disabled by default, to enable you will need
-       to add --enable-snmp option to ./configure script.
+Apply comma-separated network and port aggregation rules, in definition order,
+to both source and destination values. Network rules map a matching subnet to a
+new prefix length, while port rules map a range to one port:
 
-   scan-min=1
-     - Minimal interval between flow export scans. Sometimes could be useful
-       to reduce load on exporting CPU by increasing this interval. Value are
-       in kernel jiffies units (which is x/HZ seconds).
+```text
+aggregation=192.0.0.0/8=16,10.0.0.0/8=16,80-89=80,3128=80
+```
 
-   promisc=1
-     - Enables promisc hack. See README.promisc Solution 1 for details.
+The buffer is 1,024 bytes, while the sysctl interface limits input to roughly
+700 bytes. Aggregation is enabled by default; use
+`./configure --disable-aggregation` to omit it.
 
-   exportcpu=number
-     - Lock exporter to single CPU. This may be useful to fine control CPU
-       load. Common use case: with smp_affinity and RSS you spread packet
-       processing to all CPUs except one, and lock it to the exporter. While
-       exporter CPU load generally is not high, for someone it may be not
-       desirable to combine it with packet processing on very highly loaded
-       routers.
+### `snmp-rules=RULES`
 
-       This option could be changed at runtime with:
+Convert interface names to SNMP indexes using comma-separated `name:base`
+rules. For example, `ppp:200` maps `ppp11` to index 211. Rules are checked in
+order; unmatched interfaces retain their kernel index. Keep the rule list short
+because it is scanned without caching or hashing. Compile this feature with
+`./configure --enable-snmp-rules`.
 
-         # echo number > /sys/module/ipt_NETFLOW/parameters/exportcpu
+### `scan-min=1`
 
-   engine_id=number
-     - Observation Domain ID (on IPFIX, Source Id on NetFlow v9, or Engine Id
-       on NetFlow v5) value to be exported. This may help your collector to
-       distinguish between multiple exporters. On Netflow v9 and IPFIX this
-       value is 32-bit on NetFlow v5 only 8 low bits are significant.
-       Default value is 0.
+Set the minimum interval between flow-export scans, in kernel jiffies. Increase
+it to reduce exporter CPU load.
 
-       This option could be changed at runtime with:
+### `promisc=1`
 
-         # echo number > /sys/module/ipt_NETFLOW/parameters/engine_id
+Enable promiscuous capture. See [README.promisc](README.promisc) for details.
+
+### `exportcpu=number`
+
+Pin the exporter to one CPU. This can keep exporting separate from CPUs handling
+packet processing through RSS and affinity controls. Change it at runtime with:
+
+```sh
+echo number > /sys/module/ipt_NETFLOW/parameters/exportcpu
+```
+
+### `engine_id=number`
+
+Set the IPFIX Observation Domain ID, NetFlow v9 Source ID, or NetFlow v5 Engine
+ID so collectors can distinguish exporters. NetFlow v9/IPFIX use all 32 bits;
+NetFlow v5 uses only the low 8 bits. The default is `0`. Change it at runtime
+with:
+
+```sh
+echo number > /sys/module/ipt_NETFLOW/parameters/engine_id
+```
 
 
 ## How to Read Statistics
@@ -662,8 +610,11 @@ target in iptables. See the next section.
   Statistics is your friend to fine tune and understand netflow module
   performance.
 
-  To see stat in human readable form:
-    # cat /proc/net/stat/ipt_netflow
+To see the statistics in human-readable form:
+
+```sh
+cat /proc/net/stat/ipt_netflow
+```
 
   How to interpret the data:
 
@@ -699,8 +650,8 @@ target in iptables. See the next section.
 
 > Natevents disabled, count start 0, stop 0.
 
-    - Natevents mode disabled or enabled, and how much start or stop events
-      are reported.
+This shows whether NAT-events mode is enabled and how many start and stop events
+have been reported.
 
 > Flows: active 5187 (peak 83905 reached 0d0h1m ago), mem 283K, worker delay 100/1000 (37 ms, 0 us, 4:0 0 [3]).
 
