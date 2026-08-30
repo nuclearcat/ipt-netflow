@@ -37,7 +37,7 @@ jobs:
 
           kernel_set = os.environ.get("KERNEL_SET") or "worktree-matrix"
           worktree_versions = [
-              "7.0.12",
+              "7.2.2",
               "6.18.35",
               "6.12.93",
               "6.6.142",
