@@ -1,18 +1,17 @@
-ipt_NETFLOW linux 5.x kernel module by <abc@openwall.com> -- 2008-2025.
-Continued development by <denys.f@collabora.com> in 2025 https://github.com/nuclearcat/ipt-netflow
+# ipt_NETFLOW
 
 [![Kernel CI](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml/badge.svg?branch=master)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
 [![Latest tested kernel](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnuclearcat%2Fipt-netflow%2Fmaster%2F.github%2Fkernel-matrix.json&query=%24.latest&label=latest%20kernel&logo=linux&logoColor=black&color=FCC624)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
 [![Tested LTS kernels](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnuclearcat%2Fipt-netflow%2Fmaster%2F.github%2Fkernel-matrix.json&query=%24.lts&label=LTS%20kernels&color=2ea44f)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
 
-   High performance NetFlow v5, v9, IPFIX flow data export module for Linux
-   kernel. Created to be useful for linux routers in high-throughput networks.
-   It should be used as iptables target.
+High-performance NetFlow v5, v9, and IPFIX flow-data export module for Linux.
+It supports iptables NETFLOW targets and direct netfilter-hook capture for
+nftables-only systems.
 
+Originally developed by <abc@openwall.com> (2008-2025). Continued development
+by <denys.f@collabora.com> since 2025.
 
-=========================
-= Detailed Feature List =
-=========================
+## Detailed Feature List
 
    * High performance and scalability. For highest performance module could be
      run without conntrack being enabled in kernel. Reported to be able to
@@ -44,9 +43,8 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
      Such as metering, exporting, sampling stat and reliability stat, sampling 
      configuration, network devices ifName, ifDescr list.
 
-   * Tested to compile and work out of the box on Centos 6, 7, Debian and
-   * Ubuntu. Many vanilla Linux kernels since 2.6.18 up to the latest (as of
-   * writing is 3.19) are supported and tested.
+   * Automated CI tests current stable and LTS Linux releases, with the exact
+     kernel versions shown in the badges above.
 
    * Module load time and run-time (via sysctl) configuration.
 
@@ -61,21 +59,17 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
      also supporting optional MPLS decapsulation and MPLS-aware NetFlow.
 
 
-============================
-= OBTAINING LATEST VERSION =
-============================
+## Obtaining the Latest Version
 
    $ git clone git://github.com/nuclearcat/ipt-netflow.git ipt-netflow
    $ cd ipt-netflow
 
 
-================
-= INSTALLATION =
-================
+## Installation
 
    Five easy steps.
 
-** 1. Prepare Kernel source
+### 1. Prepare Kernel source
 
    If you have package system install kernel-devel package, otherwise install
    raw kernel source from http://kernel.org matching _exactly_ version of your
@@ -98,7 +92,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
     or
       kernel-src-dir/# zcat /proc/config.gz > .config
 
-    Assuming you unpacked kernel source into `kernel-src-dir/' directory.
+    Assuming you unpacked kernel source into the `kernel-src-dir/` directory.
     Then run:
 
       kernel-src-dir/# make oldconfig
@@ -107,11 +101,11 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 
       kernel-src-dir/# make prepare modules_prepare
 
-   Note: Don't try to `make prepare' in Centos kernel-devel package directory
+   Note: Don't try to `make prepare` in Centos kernel-devel package directory
      (which is usually something like /usr/src/kernels/2.6.32-431.el6.x86_64)
      as this is wrong and meaningless.
 
-** 2. Prepare Iptables
+### 2. Prepare Iptables
 
    Before this step it also would be useful to install pkg-config if don't
    already have.
@@ -131,7 +125,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 
    c) Otherwise, for raw iptables source build it and make install.
 
-** 3. Prepare net-snmp (optional)
+### 3. Prepare net-snmp (optional)
 
   In case you want to manage or monitor module performance via SNMP you
   may install net-snmp. If you want to skip this step run configure
@@ -147,7 +141,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 
   c) Otherwise install net-snmp from www.net-snmp.org
 
-** 4. Now, to actually build the module run:
+### 4. Build the module
 
       ~/ipt-netflow# ./configure
       ~/ipt-netflow# make all install
@@ -176,13 +170,13 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
      z) If all fails create ticket at
           https://github.com/nuclearcat/ipt-netflow/issues
 
-** 5. After this point you should be able to load module and
-     use -j NETFLOW target in your iptables. See next section.
+### 5. Load the module
+
+After this point you should be able to load the module and use the NETFLOW
+target in iptables. See the next section.
 
 
-=====================
-= Configure Options =
-=====================
+## Configure Options
 
    Configure script allows to enable or disable optional features:
 
@@ -190,8 +184,8 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
          enables natevents (NEL) support, (this and option will require
 	 conntrack support to be enabled into kernel and conntack
          module (nf_conntrack) loaded before ipt_NETFLOW. Usually this is
-         done automatically because of `depmod', but if you don't do `make
-         install' you'll need to load nf_conntrack manually.
+         done automatically because of `depmod`, but if you don't run
+         `make install` you'll need to load nf_conntrack manually.
          Read below for explanation of natevents.
 
      --enable-sampler
@@ -256,9 +250,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
 	 10, set to 0 to not report anything).
 
 
-===========
-= RUNNING =
-===========
+## Running
 
 1. You can load module directly by insmod like this:
 
@@ -383,9 +375,9 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
    Note: Using of SNMP v2c or v3 is mandatory for most tables, because
    this MIB uses 64-bit counters (Counter64) which is not supported in old
    SNMP v1. You should understand that 32-bit counter will wrap on 10Gbit
-   traffic in just 3.4 seconds! So, always pass option `-v2c' or `-v3'
-   to net-snmp utils. Or, for example, configure option `defVersion 2c'
-   in ~/.snmp/snmp.conf  You can also have `defCommunity public' ov v3
+   traffic in just 3.4 seconds! So, always pass option `-v2c` or `-v3`
+   to net-snmp utils. Or, for example, configure option `defVersion 2c`
+   in ~/.snmp/snmp.conf. You can also have `defCommunity public` or v3
    auth parameters (defSecurityName, defSecurityLevel, defPassphrase)
    set there (man snmp.conf).
 
@@ -411,9 +403,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
      $ snmptable -v2c -c public 127.0.0.1 -m IPT-NETFLOW-MIB iptNetflowSockTable
 
 
-===========
-= OPTIONS =
-===========
+## Options
 
    Options can be passed as parameters to module or changed dynamically
    via  sysctl net.netflow  or  IPT-NETFLOW-MIB::iptNetflowSysctl
@@ -459,7 +449,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
    sampler=deterministic:123
    sampler=random:123
    sampler=hash:123
-     - enables Flow Sampling. To disable set to the empty value or to `0'.
+     - enables Flow Sampling. To disable set to the empty value or to `0`.
        Note, that this is flow sampling (as of RFC 7014), not packet
        sampling (PSAMP).
 
@@ -667,9 +657,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
          # echo number > /sys/module/ipt_NETFLOW/parameters/engine_id
 
 
-====================
-= HOW TO READ STAT =
-====================
+## How to Read Statistics
 
   Statistics is your friend to fine tune and understand netflow module
   performance.
@@ -687,9 +675,9 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
   v1.8-122: 1.8 is release, 122 is commit number after release;
   -gfae9d59: fae9d59 is short git commit id;
   -dirty: if present, meaning that git detected that sources are changed since
-      last git commit, you may wish to do `git diff' to view changes;
+      last git commit, you may wish to do `git diff` to view changes;
   srcversion 6141961152BE0DFA6A21EF4: binary version of module, you can
-      compare this with data from `modinfo ./ipt_NETFLOW.ko' to identify
+      compare this with data from `modinfo ./ipt_NETFLOW.ko` to identify
       actual binary loaded;
   aggr mac vlan: tags to identify compile time options that are enabled.
 
@@ -794,8 +782,8 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
   Errors X pkts: how much packets not sent due to socket errors.
   Traffic lost 0 pkts, 0 Kbytes, 0 flows: how much metered traffic is lost
     due to socket errors.
-  Note that `cberr' errors are not accounted here due to their asynchronous
-    nature. Read below about `cberr' errors.
+  Note that `cberr` errors are not accounted here due to their asynchronous
+    nature. Read below about `cberr` errors.
 
 > sock0: 10.0.0.2:2055 unconnected (1 attempts).
 
@@ -834,9 +822,7 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
     - controlled by sysctl net.netflow.aggregation variable.
 
 
-==========================
-= NetFlow considerations =
-==========================
+## NetFlow Considerations
 
   List of all IPFIX Elements http://www.iana.org/assignments/ipfix/ipfix.xhtml
 
@@ -887,6 +873,4 @@ Continued development by <denys.f@collabora.com> in 2025 https://github.com/nucl
   Elements being used and different statistics sent via Options Templates.
 
 
-=========
-= VOILA =
-=========
+## Voila
