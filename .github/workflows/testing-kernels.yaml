@@ -25,6 +25,8 @@ jobs:
     outputs:
       matrix: ${{ steps.kernels.outputs.matrix }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Build kernel matrix
         id: kernels
         env:
@@ -36,16 +38,9 @@ jobs:
           import urllib.request
 
           kernel_set = os.environ.get("KERNEL_SET") or "worktree-matrix"
-          worktree_versions = [
-              "7.2.2",
-              "6.18.35",
-              "6.12.93",
-              "6.6.142",
-              "6.1.175",
-              "5.15.209",
-              "5.10.258",
-              "5.4.302",
-          ]
+          with open(".github/kernel-matrix.json", encoding="utf-8") as config_file:
+              matrix_config = json.load(config_file)
+          worktree_versions = [matrix_config["latest"], *matrix_config["lts"]]
 
           matrix = []
 

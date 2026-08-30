@@ -1,6 +1,10 @@
 ipt_NETFLOW linux 5.x kernel module by <abc@openwall.com> -- 2008-2025.
 Continued development by <denys.f@collabora.com> in 2025 https://github.com/nuclearcat/ipt-netflow
 
+[![Kernel CI](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml/badge.svg?branch=master)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
+[![Latest tested kernel](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnuclearcat%2Fipt-netflow%2Fmaster%2F.github%2Fkernel-matrix.json&query=%24.latest&label=latest%20kernel&logo=linux&logoColor=black&color=FCC624)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
+[![Tested LTS kernels](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnuclearcat%2Fipt-netflow%2Fmaster%2F.github%2Fkernel-matrix.json&query=%24.lts&label=LTS%20kernels&color=2ea44f)](https://github.com/nuclearcat/ipt-netflow/actions/workflows/testing-kernels.yaml)
+
    High performance NetFlow v5, v9, IPFIX flow data export module for Linux
    kernel. Created to be useful for linux routers in high-throughput networks.
    It should be used as iptables target.
