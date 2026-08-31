@@ -3571,10 +3571,10 @@ static inline void add_tpl_field(__u8 *ptr, const int type, const struct ipt_net
 	case IN_PKTS:
 #ifdef CONFIG_NF_NAT_NEEDED
 		if (nf->nat) {
-			put_unaligned_be64(nf->nat->orig_packets, (__be64 *)ptr);
+			put_unaligned_be32(nf->nat->orig_packets, (__be32 *)ptr);
 		} else {
 #endif
-			put_unaligned_be64(nf->nr_packets, (__be64 *)ptr);
+			put_unaligned_be32(nf->nr_packets, (__be32 *)ptr);
 #ifdef CONFIG_NF_NAT_NEEDED
 		}
 #endif
