@@ -3242,7 +3242,7 @@ static void free_templates(void)
 	tpl_count = 0;
 
 	/* reinitialize template timeouts */
-	ts_sysinf_last = ts_stat_last = 0;
+	ts_sysinf_last = ts_stat_last = ts_ifnames_last = 0;
 #ifdef ENABLE_SAMPLER
 	ts_sampler_last = 0;
 #endif
@@ -4074,6 +4074,7 @@ static void export_sampler_parameters(void)
 				export_stat(OTPL_SEL_RAND);
 		}
 		ts_sampler_last = jiffies;
+		pdu_needs_export++;
 	}
 }
 #endif
@@ -4271,6 +4272,7 @@ static void export_ifnames(void)
 	}
 	rtnl_unlock();
 	ts_ifnames_last = jiffies;
+	pdu_needs_export++;
 }
 
 /* under pause_scan_worker() */
