@@ -5427,10 +5427,12 @@ static struct module *netlink_m;
 static int register_ct_events(void)
 {
 #define NETLINK_M "nf_conntrack_netlink"
-	int ret;
+	int ret = 0;
 
 	printk(KERN_INFO "ipt_NETFLOW: enable natevents.\n");
 	mutex_lock(&events_lock);
+	if (natevents)
+		goto unlock;
 
 #ifdef CONFIG_NF_CT_NETLINK_MODULE
 	/* Preload and pin the owner before saving its notifier callbacks. */
@@ -5472,8 +5474,9 @@ static int register_ct_events(void)
 		goto err;
 	}
 	natevents = 1;
+unlock:
 	mutex_unlock(&events_lock);
-	return 0;
+	return ret;
 err:
 	natevents = 0;
 	printk(KERN_ERR "ipt_NETFLOW: cannot enable natevents: %d\n", ret);
@@ -5485,12 +5488,15 @@ static void unregister_ct_events(void)
 {
 	printk(KERN_INFO "ipt_NETFLOW: disable natevents.\n");
 	mutex_lock(&events_lock);
+	if (!natevents)
+		goto unlock;
 	unregister_pernet_subsys(&natevents_net_ops);
 	module_put(netlink_m);
 	netlink_m = NULL;
 
 	rcu_assign_pointer(saved_event_cb, NULL);
 	natevents = 0;
+unlock:
 	mutex_unlock(&events_lock);
 }
 #endif /* CONFIG_NF_NAT_NEEDED */
@@ -5799,6 +5805,7 @@ static int __init ipt_netflow_init(void)
 
 #ifdef CONFIG_NF_NAT_NEEDED
 	if (natevents) {
+		natevents = 0;
 		ret = register_ct_events();
 		if (ret < 0)
 			goto err_unregister_hooks;
