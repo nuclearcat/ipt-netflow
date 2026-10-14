@@ -5077,10 +5077,14 @@ static unsigned int netflow_target(
 					fragment = 2;
 					goto do_protocols;
 				}
-				fragment = 1;
 #define FRA0 SetXBit(4) /* Fragment header - first fragment */
 #define FRA1 SetXBit(6) /* Fragmentation header - not first fragment */
 				options |= (ntohs(fh->frag_off) & 0xFFF8)? FRA1 : FRA0;
+				if (ntohs(fh->frag_off) & 0xFFF8) {
+					fragment = 1;
+					tuple.protocol = fh->nexthdr;
+					goto do_protocols;
+				}
 				hdrlen = 8;
 				break;
 			}
