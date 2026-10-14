@@ -458,7 +458,7 @@ static void parse_table_row(
 			break;
 		default:
 			netsnmp_table_dataset_delete_row(row);
-			continue;
+			return;
 		}
 
 	}
