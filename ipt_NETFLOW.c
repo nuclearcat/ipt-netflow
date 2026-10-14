@@ -1954,6 +1954,7 @@ static struct socket *usock_open_sock(struct ipt_netflow_sock *usock)
 			sk_dst_reset(sk);
 			dev_put(dev);
 		} else {
+			error = -ENODEV;
 			printk(KERN_ERR "ipt_NETFLOW: error binding to device %s, errno %d\n",
 			    usock->sdev, -error);
 			goto err_free_sock;
