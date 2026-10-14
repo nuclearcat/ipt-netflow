@@ -5619,7 +5619,7 @@ static int register_stat(const char *name,
 static int __init ipt_netflow_init(void)
 {
 	int i;
-	int ret;
+	int ret = -ENOMEM;
 
 	printk(KERN_INFO "ipt_NETFLOW version %s, srcversion %s\n",
 		IPT_NETFLOW_VERSION, THIS_MODULE->srcversion);
@@ -5706,8 +5706,9 @@ static int __init ipt_netflow_init(void)
 		}
 		destination = destination_buf;
 	}
-	if (add_destinations(destination) < 0)
-		goto err_free_sysctl;
+	ret = add_destinations(destination);
+	if (ret < 0)
+		goto err_free_destinations;
 
 #ifdef ENABLE_AGGR
 	if (!aggregation)
@@ -5797,15 +5798,19 @@ err_unregister_targets:
 	if (targets)
 		netflow_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
 err_stop_timer:
+#ifdef ENABLE_PROMISC
+	switch_promisc(0);
+#endif
 	_unschedule_scan_worker();
 	netflow_scan_and_export(AND_FLUSH);
 	del_timer_sync(&rate_timer);
 	free_templates();
-	destination_removeall();
 #ifdef ENABLE_AGGR
 	aggregation_remove(&aggr_n_list);
 	aggregation_remove(&aggr_p_list);
 #endif
+err_free_destinations:
+	destination_removeall();
 err_free_sysctl:
 #ifdef CONFIG_SYSCTL
 	unregister_sysctl_table(netflow_sysctl_header);
@@ -5819,12 +5824,16 @@ err_free_proc_stat1:
 	remove_proc_entry("ipt_netflow", INIT_NET(proc_net_stat));
 err_free_netflow_slab:
 #endif
+#ifdef SNMP_RULES
+	synchronize_rcu();
+	kfree(snmp_ruleset);
+#endif
 	kmem_cache_destroy(ipt_netflow_cachep);
 err_free_hash:
 	vfree(htable);
 err:
 	printk(KERN_INFO "ipt_NETFLOW is not loaded.\n");
-	return -ENOMEM;
+	return ret < 0 ? ret : -ENOMEM;
 }
 
 static void __exit ipt_netflow_fini(void)
