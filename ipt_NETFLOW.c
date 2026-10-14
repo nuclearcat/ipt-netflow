@@ -5661,6 +5661,11 @@ static int __init ipt_netflow_init(void)
 	int i;
 	int ret = -ENOMEM;
 
+	if (protocol != 5 && protocol != 9 && protocol != 10) {
+		printk(KERN_ERR "ipt_NETFLOW: unsupported protocol version %d\n", protocol);
+		return -EINVAL;
+	}
+
 	printk(KERN_INFO "ipt_NETFLOW version %s, srcversion %s\n",
 		IPT_NETFLOW_VERSION, THIS_MODULE->srcversion);
 
