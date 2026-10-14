@@ -4728,12 +4728,10 @@ static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
 
 	if (events & (1 << IPCT_DESTROY)) {
 		nel->nat_event = NAT_DESTROY;
-		nat_events_stop++;
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->stop);
 	} else {
 		nel->nat_event = NAT_CREATE;
-		nat_events_start++;
 		if (likely(tstamp))
 			nel->ts_ktime = ktime_set(0, tstamp->start);
 	}
@@ -4741,6 +4739,10 @@ static int netflow_conntrack_event(const unsigned int events, NF_CT_EVENT *item)
 		nel->ts_ktime = ktime_get_real();
 
 	spin_lock_bh(&nat_lock);
+	if (nel->nat_event == NAT_DESTROY)
+		nat_events_stop++;
+	else
+		nat_events_start++;
 	list_add_tail(&nel->list, &nat_list);
 	spin_unlock_bh(&nat_lock);
 
