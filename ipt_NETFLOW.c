@@ -2722,15 +2722,13 @@ static void netflow_export_pdu_v9(void)
 	struct timeval tv;
 	int pdusize;
 
-	/* RFC 3954 requires FlowSets to be padded to 32-bit boundary. */
+	/* Use the reserved slack to align the final FlowSet. */
 	if (pdu_flowset) {
 		int padding = (PAD_SIZE - ntohs(pdu_flowset->length) % PAD_SIZE) % PAD_SIZE;
 		if (padding) {
-			unsigned char *ptr = pdu_have_space(padding) ? pdu_grab_space(padding) : NULL;
-			if (ptr) {
-				memset(ptr, 0, padding);
-				pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
-			}
+			unsigned char *ptr = pdu_grab_space(padding);
+			memset(ptr, 0, padding);
+			pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
 		}
 	}
 
@@ -2768,15 +2766,13 @@ static void netflow_export_pdu_ipfix(void)
 	struct timeval tv;
 	int pdusize;
 
-	/* RFC 7011 requires Sets to be padded to 32-bit boundary. */
+	/* Use the reserved slack to align the final Set. */
 	if (pdu_flowset) {
 		int padding = (PAD_SIZE - ntohs(pdu_flowset->length) % PAD_SIZE) % PAD_SIZE;
 		if (padding) {
-			unsigned char *ptr = pdu_have_space(padding) ? pdu_grab_space(padding) : NULL;
-			if (ptr) {
-				memset(ptr, 0, padding);
-				pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
-			}
+			unsigned char *ptr = pdu_grab_space(padding);
+			memset(ptr, 0, padding);
+			pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
 		}
 	}
 
@@ -3736,7 +3732,8 @@ static unsigned char *alloc_record_tpl(struct data_template *tpl)
 		/* if there was previous data template we should pad it to 4 bytes */
 		if (pdu_flowset) {
 			int padding = (PAD_SIZE - ntohs(pdu_flowset->length) % PAD_SIZE) % PAD_SIZE;
-			if (padding && (ptr = pdu_alloc_fail_export(padding))) {
+			if (padding) {
+				ptr = pdu_grab_space(padding);
 				pdu_flowset->length = htons(ntohs(pdu_flowset->length) + padding);
 				for (; padding; padding--)
 					*ptr++ = 0;
