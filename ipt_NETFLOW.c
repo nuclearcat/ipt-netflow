@@ -4559,11 +4559,22 @@ static void netflow_work_fn(struct work_struct *dummy)
 #define RATESHIFT 2
 #define SAMPLERATE (RATESHIFT*RATESHIFT)
 #define NUMSAMPLES(minutes) (minutes * 60 / SAMPLERATE)
-#define _A(v, m) (v) * (1024 * 2 / (NUMSAMPLES(m) + 1)) >> 10
+#define _A(v, m) (s64)(v) * (1024 * 2 / (NUMSAMPLES(m) + 1)) >> 10
 // x * (1024 / y) >> 10 is because I can not just divide long long integer
 
 // Note that CALC_RATE arguments should never be unsigned.
 #define CALC_RATE(ewma, cur, minutes) ewma += _A(cur - ewma, minutes)
+
+static int hash_metric(u64 searched, u64 found, u64 notfound, int previous)
+{
+	u64 lookups = found + notfound;
+	u64 value;
+
+	if (!lookups)
+		return previous;
+	value = div64_u64(100ULL * (searched + lookups), lookups);
+	return min_t(u64, value, INT_MAX);
+}
 
 // calculate EWMA throughput rate for whole module
 static void rate_timer_calc(
@@ -4578,7 +4589,7 @@ static void rate_timer_calc(
 	u64 searched = 0;
 	u64 found = 0;
 	u64 notfound = 0;
-	int dsrch, dfnd, dnfnd;
+	u64 dsrch, dfnd, dnfnd;
 	u64 pkt_total = 0;
 	u64 traf_total = 0;
 	int cpu;
@@ -4602,7 +4613,7 @@ static void rate_timer_calc(
 		dfnd  = st->found - st->old_found;
 		dnfnd = st->notfound - st->old_notfound;
 		/* zero values are not accounted, because only usage is interesting, not nonusage */
-		metrt = (dfnd + dnfnd)? 100 * (dsrch + dfnd + dnfnd) / (dfnd + dnfnd) : st->metric;
+		metrt = hash_metric(dsrch, dfnd, dnfnd, st->metric);
 		CALC_RATE(st->metric, metrt, 1);
 		st->old_searched = st->searched;
 		st->old_found    = st->found;
@@ -4627,7 +4638,7 @@ static void rate_timer_calc(
 	old_found    = found;
 	old_notfound = notfound;
 	/* if there is no access to hash keep rate steady */
-	metric = (dfnd + dnfnd)? 100 * (dsrch + dfnd + dnfnd) / (dfnd + dnfnd) : metric;
+	metric = hash_metric(dsrch, dfnd, dnfnd, metric);
 	CALC_RATE(min15_metric, metric, 15);
 	CALC_RATE(min5_metric, metric, 5);
 	CALC_RATE(min_metric, metric, 1);
