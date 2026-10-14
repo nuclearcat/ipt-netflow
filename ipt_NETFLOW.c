@@ -528,9 +528,13 @@ static int snmp_seq_show(struct seq_file *seq, void *v)
 	for_each_present_cpu(cpu) {
 		struct ipt_netflow_stat *st = &per_cpu(ipt_netflow_stat, cpu);
 
+		t.searched	+= st->searched;
+		t.found		+= st->found;
 		t.notfound	+= st->notfound;
 		t.pkt_total	+= st->pkt_total;
 		t.traf_total	+= st->traf_total;
+		t.pkt_out	+= st->pkt_out;
+		t.traf_out	+= st->traf_out;
 
 		t.send_failed	+= st->send_failed;
 		t.sock_cberr	+= st->sock_cberr;
