@@ -467,37 +467,32 @@ static void parse_table_row(
 
 static void grab_ipt_netflow_snmp(time_t now)
 {
-	static char buf[4096];
-	int fd;
-	int n;
-	char *p = buf;
+	FILE *file;
+	char *line = NULL;
+	size_t size = 0;
+	ssize_t n;
 
 	if ((now - totals_ts) < (TOTAL_INTERVAL + 1))
 		return;
 
-	if ((fd = open("/proc/net/stat/ipt_netflow_snmp", O_RDONLY)) < 0)
+	if (!(file = fopen("/proc/net/stat/ipt_netflow_snmp", "r")))
 		return;
 
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-
-	DEBUGMSGTL(("netflow", "%s\n", buf));
 	clear_data_set(cpu_data_set);
 	clear_data_set(sock_data_set);
-	while (*p) {
+	while ((n = getline(&line, &size, file)) != -1) {
 		struct snmp_vars *sys;
-		char *name = p;
+		char *name = line;
+		char *p;
 		char *val;
 
-		if (!(p = strpbrk(p, " \t")))
-			break;
+		DEBUGMSGTL(("netflow", "%s", line));
+		if (n && line[n - 1] == '\n')
+			line[n - 1] = '\0';
+		if (!(p = strpbrk(line, " \t")))
+			continue;
 		*p++ = '\0';
 		val = p + strspn(p, " \t");
-		p = index(p, '\n');
-		*p++ = '\0';
 
 		if (!strncmp(name, "cpu", 3)) {
 			parse_table_row(atoi(name + 3), val, cputable, cpu_data_set);
@@ -515,6 +510,8 @@ static void grab_ipt_netflow_snmp(time_t now)
 			sys->val64 = strtoll(val, NULL, 10);
 		sys->ts = now;
 	}
+	free(line);
+	fclose(file);
 	totals_ts = now;
 }
 
