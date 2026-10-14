@@ -1583,7 +1583,7 @@ static int aggregation_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 		printk(KERN_INFO "aggregation_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
 	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write)
-		add_aggregation(aggregation_buf);
+		return add_aggregation(aggregation_buf);
 	return ret;
 }
 #endif
@@ -2421,6 +2421,7 @@ static int add_aggregation(char *ptr)
 	LIST_HEAD(new_aggr_n_list);
 	LIST_HEAD(new_aggr_p_list);
 	LIST_HEAD(old_aggr_list);
+	int ret = -EINVAL;
 
 	while (ptr && *ptr) {
 		unsigned char ip[4];
@@ -2430,12 +2431,17 @@ static int add_aggregation(char *ptr)
 
 		ptr += strspn(ptr, SEPARATORS);
 
+		if (!*ptr)
+			break;
 		if (sscanf(ptr, "%hhu.%hhu.%hhu.%hhu/%u=%u",
 			   ip, ip + 1, ip + 2, ip + 3, &mask, &aggr_to) == 6) {
+			if (mask > 32 || aggr_to > 32)
+				goto bad_rule;
 
 			if (!(aggr_n = vmalloc(sizeof(*aggr_n)))) {
 				printk(KERN_ERR "ipt_NETFLOW: can't vmalloc aggr\n");
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto err;
 			}
 			memset(aggr_n, 0, sizeof(*aggr_n));
 
@@ -2447,12 +2453,19 @@ static int add_aggregation(char *ptr)
 			       HIPQUAD(aggr_n->addr), mask, aggr_to);
 			list_add_tail(&aggr_n->list, &new_aggr_n_list);
 
-		} else if (sscanf(ptr, "%u-%u=%u", &port1, &port2, &aggr_to) == 3 ||
-			   sscanf(ptr, "%u=%u", &port2, &aggr_to) == 2) {
+		} else {
+			if (sscanf(ptr, "%u-%u=%u", &port1, &port2, &aggr_to) != 3) {
+				if (sscanf(ptr, "%u=%u", &port2, &aggr_to) != 2)
+					goto bad_rule;
+				port1 = port2;
+			}
+			if (port1 > port2 || port2 > 65535 || aggr_to > 65535)
+				goto bad_rule;
 
 			if (!(aggr_p = vmalloc(sizeof(*aggr_p)))) {
 				printk(KERN_ERR "ipt_NETFLOW: can't vmalloc aggr\n");
-				return -ENOMEM;
+				ret = -ENOMEM;
+				goto err;
 			}
 			memset(aggr_p, 0, sizeof(*aggr_p));
 
@@ -2462,9 +2475,6 @@ static int add_aggregation(char *ptr)
 			printk(KERN_INFO "ipt_NETFLOW: add aggregation [%u-%u=%u]\n",
 			       port1, port2, aggr_to);
 			list_add_tail(&aggr_p->list, &new_aggr_p_list);
-		} else {
-			printk(KERN_ERR "ipt_NETFLOW: bad aggregation rule: %s (ignoring)\n", ptr);
-			break;
 		}
 
 		ptr = strpbrk(ptr, SEPARATORS);
@@ -2484,6 +2494,12 @@ static int add_aggregation(char *ptr)
 	write_unlock_bh(&aggr_lock);
 	aggregation_remove(&old_aggr_list);
 	return 0;
+bad_rule:
+	printk(KERN_ERR "ipt_NETFLOW: bad aggregation rule: %s\n", ptr);
+err:
+	aggregation_remove(&new_aggr_n_list);
+	aggregation_remove(&new_aggr_p_list);
+	return ret;
 }
 #endif
 
@@ -5717,7 +5733,9 @@ static int __init ipt_netflow_init(void)
 		strscpy(aggregation_buf, aggregation, sizeof(aggregation_buf));
 		aggregation = aggregation_buf;
 	}
-	add_aggregation(aggregation);
+	ret = add_aggregation(aggregation);
+	if (ret < 0)
+		goto err_free_aggregation;
 #endif
 
 #ifdef ENABLE_SAMPLER
@@ -5806,6 +5824,7 @@ err_stop_timer:
 	del_timer_sync(&rate_timer);
 	free_templates();
 #ifdef ENABLE_AGGR
+err_free_aggregation:
 	aggregation_remove(&aggr_n_list);
 	aggregation_remove(&aggr_p_list);
 #endif
