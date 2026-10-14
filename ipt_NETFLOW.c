@@ -5190,7 +5190,7 @@ do_protocols:
 
 #ifdef ENABLE_AGGR
 	/* aggregate networks */
-	read_lock(&aggr_lock);
+	read_lock_bh(&aggr_lock);
 	if (family == AF_INET) {
 		list_for_each_entry(aggr_n, &aggr_n_list, list)
 			if (unlikely((ntohl(tuple.src.ip) & aggr_n->mask) == aggr_n->addr)) {
@@ -5229,7 +5229,7 @@ do_protocols:
 				break;
 			}
 	}
-	read_unlock(&aggr_lock);
+	read_unlock_bh(&aggr_lock);
 #endif
 
 #ifdef SAMPLING_HASH
