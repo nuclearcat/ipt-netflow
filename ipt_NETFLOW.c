@@ -4800,7 +4800,7 @@ static inline __u32 ip4_options(const u_int8_t *p, const unsigned int optsize)
 
 	for (i = 0; likely(i < optsize); ) {
 		u_int8_t op = p[i++];
-		u_int8_t nn = op & 0x17; /* 5 bits  option number */
+		u_int8_t nn = op & 0x1f; /* 5 bits  option number */
 
 		/*
 		 * "Note that for identifying an option not just the 5-bit Option
@@ -4814,7 +4814,7 @@ static inline __u32 ip4_options(const u_int8_t *p, const unsigned int optsize)
 		 */
 
 		if (likely(nn < 32))
-			ret |= 1 << (31 - nn);
+			ret |= 1U << (31 - nn);
 		if (i >= optsize || op == 0) /* 0 is EOOL. */
 			break;
 		else if (unlikely(op == 1))
@@ -4846,7 +4846,7 @@ static inline __u32 tcp_options(const struct sk_buff *skb, const unsigned int pt
 
 		if (likely(opt < 32)) {
 			/* IANA doc is messed up, see above. */
-			ret |= 1 << (31 - opt);
+			ret |= 1U << (31 - opt);
 		}
 		if (likely(i >= optsize || opt == 0))
 			break;
