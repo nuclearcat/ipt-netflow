@@ -464,6 +464,11 @@ Compile this feature with `./configure --enable-natevents`. See the
 [NAT logging draft](https://datatracker.ietf.org/doc/html/draft-ietf-behave-ipfix-nat-logging-04)
 for the protocol details.
 
+When conntrack-netlink is a module, NEL loads and holds a reference to it while
+events are enabled. This requires a kernel with `CONFIG_SYSFS`; activation fails
+if the module cannot be loaded or safely referenced. Built-in conntrack-netlink
+does not require this module reference.
+
 ### `targets=1`
 
 Register IPv4/IPv6 NETFLOW xtables targets (`-j NETFLOW`). Set this module-load
