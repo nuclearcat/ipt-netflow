@@ -4307,7 +4307,7 @@ static void netflow_switch_version(const int ver)
 #ifdef CONFIG_NF_NAT_NEEDED
 static void export_nat_event(struct nat_event *nel)
 {
-	static struct ipt_netflow nf = { { NULL } };
+	struct ipt_netflow nf = { 0 };
 
 	nf.tuple.l3proto = AF_INET;
 	nf.tuple.protocol = nel->protocol;
