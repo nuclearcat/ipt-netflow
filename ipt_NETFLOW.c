@@ -4972,7 +4972,7 @@ static unsigned int netflow_target(
 #endif
 	    !(iph = skb_header_pointer(skb, 0,
 			    (likely(family == AF_INET))? sizeof(_iph.ip) : sizeof(_iph.ip6),
-			    &iph)))) {
+			    &_iph)))) {
 		NETFLOW_STAT_INC(truncated);
 		NETFLOW_STAT_INC(pkt_drop);
 		NETFLOW_STAT_ADD(traf_drop, skb->len);
