@@ -5765,7 +5765,7 @@ static int __init ipt_netflow_init(void)
 	if (!snmp_rules)
 		snmp_rules = snmp_rules_buf;
 	if (snmp_rules != snmp_rules_buf) {
-		strlcpy(snmp_rules_buf, snmp_rules, sizeof(snmp_rules_buf));
+		strscpy(snmp_rules_buf, snmp_rules, sizeof(snmp_rules_buf));
 		snmp_rules = snmp_rules_buf;
 	}
 	add_snmp_rules(snmp_rules);
