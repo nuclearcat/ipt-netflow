@@ -5059,8 +5059,13 @@ static unsigned int netflow_target(
 			case IPPROTO_AH: {
 				struct ip_auth_hdr _ahdr, *ap;
 
-				if (likely(ap = skb_header_pointer(skb, ptr, 8, &_ahdr)))
-					SAVE_SPI(tuple, ap->spi);
+				ap = skb_header_pointer(skb, ptr, 8, &_ahdr);
+				if (unlikely(!ap)) {
+					tuple.protocol = currenthdr;
+					fragment = 3;
+					goto do_protocols;
+				}
+				SAVE_SPI(tuple, ap->spi);
 				hdrlen = (ap->hdrlen + 2) << 2;
 				break;
 			}
