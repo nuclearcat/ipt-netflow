@@ -2649,7 +2649,7 @@ static void netflow_export_pdu_v5(void)
 	pdu.v5.ts_uptime	= htonl(jiffies_to_msecs(jiffies));
 	do_gettimeofday(&tv);
 	pdu.v5.ts_usecs		= htonl(tv.tv_sec);
-	pdu.v5.ts_unsecs	= htonl(tv.tv_usec);
+	pdu.v5.ts_unsecs	= htonl(tv.tv_usec * 1000);
 	pdu.v5.seq		= htonl(pdu_seq);
 	//pdu.v5.eng_type	= 0;
 	pdu.v5.eng_id		= (__u8)engine_id;
