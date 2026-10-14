@@ -260,7 +260,7 @@ struct ipfix_pdu {
  * not searchable and will be exported soon. */
 #define FLOW_FULL_WATERMARK 0xffefffff
 
-#define EXTRACT_SPI(tuple)	((tuple.s_port << 16) | tuple.d_port)
+#define EXTRACT_SPI(tuple)	(((__u32)tuple.s_port << 16) | tuple.d_port)
 #define SAVE_SPI(tuple, spi)	{ tuple.s_port = spi >> 16; \
 				  tuple.d_port = spi; }
 #define MAX_VLAN_TAGS	2
