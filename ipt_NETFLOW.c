@@ -1724,7 +1724,7 @@ static int protocol_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct fi
 }
 
 #ifdef CONFIG_NF_NAT_NEEDED
-static void register_ct_events(void);
+static int register_ct_events(void);
 static void unregister_ct_events(void);
 static int natevents_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file *filp,)
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
@@ -1742,7 +1742,7 @@ static int natevents_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct f
 	if (natevents && !val)
 		unregister_ct_events();
 	else if (!natevents && val)
-		register_ct_events();
+		return register_ct_events();
 
 	return ret;
 }
@@ -5408,40 +5408,61 @@ static struct pernet_operations natevents_net_ops = {
 static DEFINE_MUTEX(events_lock);
 static struct module *netlink_m;
 /* Both functions may be called multiple times. */
-static void register_ct_events(void)
+static int register_ct_events(void)
 {
 #define NETLINK_M "nf_conntrack_netlink"
-
+	int ret;
 
 	printk(KERN_INFO "ipt_NETFLOW: enable natevents.\n");
 	mutex_lock(&events_lock);
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(5,11,0) || \
-		LINUX_VERSION_CODE < KERNEL_VERSION(5,9,0)
-	/* Pre-load netlink module who will be first notifier
-	 * user, and then hijack nf_conntrack_event_cb from it. */
-	if (
-	    !find_module(NETLINK_M)) {
-		printk("Loading " NETLINK_M "\n");
-		request_module(NETLINK_M);
+#ifdef CONFIG_NF_CT_NETLINK_MODULE
+	/* Preload and pin the owner before saving its notifier callbacks. */
+	ret = request_module(NETLINK_M);
+	if (ret < 0)
+		goto err;
+#ifdef CONFIG_SYSFS
+	{
+		struct kobject *kobj;
+		struct module *mod;
 
-	}
-
-	/* Reference netlink module to prevent it's unsafe unload before us. */
-	if (!netlink_m && (netlink_m = find_module(NETLINK_M))) {
-		if (!try_module_get(netlink_m))
-			netlink_m = NULL;
+		kobj = kset_find_obj(THIS_MODULE->mkobj.kobj.kset, NETLINK_M);
+		if (!kobj) {
+			ret = -ENODEV;
+			goto err;
+		}
+		mod = container_of(kobj, struct module_kobject, kobj)->mod;
+		/* The kobject reference keeps mod alive until try_module_get(). */
+		if (try_module_get(mod))
+			netlink_m = mod;
+		kobject_put(kobj);
+		if (!netlink_m) {
+			ret = -ENODEV;
+			goto err;
+		}
 	}
 #else
-	printk(KERN_WARNING "ipt_NETFLOW: %s is not supported with this kernel version.\n", NETLINK_M);
-	netlink_m = NULL;
+	/* There is no exported module-by-name lookup without sysfs. */
+	ret = -EOPNOTSUPP;
+	goto err;
 #endif
-
-
+#endif
 	/* Register ct events callback. */
-	register_pernet_subsys(&natevents_net_ops);
+	ret = register_pernet_subsys(&natevents_net_ops);
+	if (ret < 0) {
+		module_put(netlink_m);
+		netlink_m = NULL;
+		rcu_assign_pointer(saved_event_cb, NULL);
+		goto err;
+	}
 	natevents = 1;
 	mutex_unlock(&events_lock);
+	return 0;
+err:
+	natevents = 0;
+	printk(KERN_ERR "ipt_NETFLOW: cannot enable natevents: %d\n", ret);
+	mutex_unlock(&events_lock);
+	return ret;
 }
 
 static void unregister_ct_events(void)
@@ -5758,13 +5779,20 @@ static int __init ipt_netflow_init(void)
 	}
 
 #ifdef CONFIG_NF_NAT_NEEDED
-	if (natevents)
-		register_ct_events();
+	if (natevents) {
+		ret = register_ct_events();
+		if (ret < 0)
+			goto err_unregister_hooks;
+	}
 #endif
 
 	printk(KERN_INFO "ipt_NETFLOW is loaded.\n");
 	return 0;
 
+#ifdef CONFIG_NF_NAT_NEEDED
+err_unregister_hooks:
+	netflow_unregister_hooks();
+#endif
 err_unregister_targets:
 	if (targets)
 		netflow_unregister_targets(ipt_netflow_reg, ARRAY_SIZE(ipt_netflow_reg));
