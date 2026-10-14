@@ -5037,7 +5037,7 @@ static unsigned int netflow_target(
 
 		tuple.src.in6	= iph->ip6.saddr;
 		tuple.dst.in6	= iph->ip6.daddr;
-		tuple.tos	= iph->ip6.priority;
+		tuple.tos	= (iph->ip6.priority << 4) | (iph->ip6.flow_lbl[0] >> 4);
 		fragment	= 0;
 		ptr		= sizeof(struct ipv6hdr);
 		pkt_len		= ntohs(iph->ip6.payload_len) + sizeof(struct ipv6hdr);
@@ -5325,7 +5325,7 @@ do_protocols:
 		} else {
 			if (rt)
 				nf->nh.in6 = ((struct rt6_info *)rt)->rt6i_gateway;
-			nf->flow_label = (iph->ip6.flow_lbl[0] << 16) |
+			nf->flow_label = ((iph->ip6.flow_lbl[0] & 0x0f) << 16) |
 			       	(iph->ip6.flow_lbl[1] << 8) | (iph->ip6.flow_lbl[2]);
 		}
 	}
