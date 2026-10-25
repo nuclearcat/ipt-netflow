@@ -39,17 +39,18 @@ struct netflow_aggr_n {struct list_head list;atomic_uint usage;uint32_t mask,add
 struct netflow_aggr_p {struct list_head list;atomic_uint usage;uint16_t port1,port2,aggr_port;};
 struct aggregation_rules {struct list_head nets,ports;};
 static _Atomic(struct aggregation_rules *) aggr_ruleset;
-static pthread_mutex_t aggr_lock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t aggr_config_lock=PTHREAD_MUTEX_INITIALIZER;
-#define mutex_lock(x) assert(!pthread_mutex_lock(x))
-#define mutex_unlock(x) assert(!pthread_mutex_unlock(x))
+static _Thread_local unsigned config_lock_depth;
+#define mutex_lock(x) do {assert(!pthread_mutex_lock(x));assert(!config_lock_depth++);} while(0)
+#define mutex_unlock(x) do {assert(config_lock_depth--==1);assert(!pthread_mutex_unlock(x));} while(0)
+#define lockdep_is_held(x) (config_lock_depth==1)
 /* Model the grace-period lifetime contract, not the kernel RCU implementation. */
 static pthread_rwlock_t readers=PTHREAD_RWLOCK_INITIALIZER;
 #define rcu_read_lock() assert(!pthread_rwlock_rdlock(&readers))
 #define rcu_read_unlock() assert(!pthread_rwlock_unlock(&readers))
 #define rcu_assign_pointer(p,v) atomic_store_explicit(&(p),v,memory_order_release)
 #define rcu_dereference(p) atomic_load_explicit(&(p),memory_order_acquire)
-#define rcu_dereference_protected(p,c) rcu_dereference(p)
+#define rcu_dereference_protected(p,c) (assert(c),rcu_dereference(p))
 static void synchronize_rcu(void) { assert(!pthread_rwlock_wrlock(&readers));assert(!pthread_rwlock_unlock(&readers)); }
 #define atomic_inc(p) atomic_fetch_add(p,1)
 #define unlikely(x) (x)
@@ -99,6 +100,12 @@ apply_end = r'''
 }
 '''
 suffix = r'''
+static int set_aggregation(char *text) {
+ mutex_lock(&aggr_config_lock);
+ int ret=add_aggregation(text);
+ mutex_unlock(&aggr_config_lock);
+ return ret;
+}
 static int sysctl_write(char *text) {
  struct ctl_table ctl={aggregation_buf,sizeof(aggregation_buf)};
  size_t len=strlen(text);loff_t pos=0;
@@ -122,23 +129,23 @@ static void *reader(void *unused) {
 }
 static void *replacement(void *unused) {
  char input[]="10.0.0.0/8=8,80-89=443,3128=443";
- assert(!add_aggregation(input));
+ assert(!set_aggregation(input));
  return NULL;
 }
 int main(void) {
  char good[]="10.0.0.0/8=16,80-89=80,3128=80,";
- assert(add_aggregation(good)==0 && live==4);
+ assert(set_aggregation(good)==0 && live==4);
  struct aggregation_rules *initial=rcu_dereference(aggr_ruleset);
  struct netflow_aggr_p *last=list_entry(initial->ports.prev,struct netflow_aggr_p,list);
  assert(last->port1==3128 && last->port2==3128 && last->aggr_port==80);
  const char *bad[]={"10.0.0.0/33=8","10.0.0.0/8=33","65536=80","1=65536","90-80=80","bad"};
  for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++) {
-  char input[100];strcpy(input,bad[i]);assert(add_aggregation(input)==-EINVAL && live==4);
+  char input[100];strcpy(input,bad[i]);assert(set_aggregation(input)==-EINVAL && live==4);
   assert(rcu_dereference(aggr_ruleset)==initial);
  }
  for(int failure=1;failure<=4;failure++) {
   attempt=0;fail_at=failure;
-  assert(add_aggregation(good)==-ENOMEM && live==4);
+  assert(set_aggregation(good)==-ENOMEM && live==4);
   assert(rcu_dereference(aggr_ruleset)==initial);
  }
  fail_at=0;
@@ -156,7 +163,7 @@ int main(void) {
  assert(sysctl_write(good)==-EFAULT && live==4);
  string_error=0;check_readback(good);
  char partial_bad[]="1.0.0.0/8=16,80=70000";
- assert(add_aggregation(partial_bad)==-EINVAL && live==4);
+ assert(set_aggregation(partial_bad)==-EINVAL && live==4);
  check_snapshot(apply(AF_INET,IPPROTO_TCP));
  struct netflow_aggr_n *net=list_entry(initial->nets.next,struct netflow_aggr_n,list);
  assert(net->usage==2);
@@ -178,7 +185,7 @@ int main(void) {
  pthread_t threads[4];
  for(int i=0;i<4;i++) assert(!pthread_create(&threads[i],NULL,reader,NULL));
  for(int i=0;i<200;i++) {
-  if(i%2) replacement(NULL);else assert(!add_aggregation(good));
+  if(i%2) replacement(NULL);else assert(!set_aggregation(good));
  }
  stop=1;
  for(int i=0;i<4;i++) assert(!pthread_join(threads[i],NULL));
@@ -187,7 +194,7 @@ int main(void) {
  assert(sysctl_write(empty)==0 && live==1);check_readback(empty);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81 && r.dport==3128);
- aggregation_replace(NULL);
+ mutex_lock(&aggr_config_lock);aggregation_replace(NULL);mutex_unlock(&aggr_config_lock);
  assert(!rcu_dereference(aggr_ruleset) && live==0);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81);

@@ -268,8 +268,7 @@ struct aggregation_rules {
 	struct list_head ports;
 };
 static struct aggregation_rules __rcu *aggr_ruleset;
-static DEFINE_MUTEX(aggr_lock); /* ruleset publication */
-static DEFINE_MUTEX(aggr_config_lock); /* sysctl text buffer */
+static DEFINE_MUTEX(aggr_config_lock); /* sysctl text and ruleset publication */
 static void aggregation_replace(struct aggregation_rules *rules);
 static int add_aggregation(char *ptr);
 #endif
@@ -2458,10 +2457,9 @@ static void aggregation_replace(struct aggregation_rules *rules)
 {
 	struct aggregation_rules *old;
 
-	mutex_lock(&aggr_lock);
-	old = rcu_dereference_protected(aggr_ruleset, lockdep_is_held(&aggr_lock));
+	old = rcu_dereference_protected(aggr_ruleset,
+				      lockdep_is_held(&aggr_config_lock));
 	rcu_assign_pointer(aggr_ruleset, rules);
-	mutex_unlock(&aggr_lock);
 	/* Both lists must remain intact until readers of the old ruleset exit. */
 	synchronize_rcu();
 	aggregation_free(old);
@@ -5927,7 +5925,9 @@ err_free_proc_stat1:
 err_free_netflow_slab:
 #endif
 #ifdef ENABLE_AGGR
+	mutex_lock(&aggr_config_lock);
 	aggregation_replace(NULL);
+	mutex_unlock(&aggr_config_lock);
 #endif
 #ifdef SNMP_RULES
 	synchronize_rcu();
@@ -5976,7 +5976,9 @@ static void __exit ipt_netflow_fini(void)
 	free_templates();
 	destination_removeall();
 #ifdef ENABLE_AGGR
+	mutex_lock(&aggr_config_lock);
 	aggregation_replace(NULL);
+	mutex_unlock(&aggr_config_lock);
 #endif
 #ifdef SNMP_RULES
 	kfree(snmp_ruleset);
