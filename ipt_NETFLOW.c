@@ -262,10 +262,15 @@ static char aggregation_buf[AGGR_SIZE] = "";
 static char *aggregation = aggregation_buf;
 module_param(aggregation, charp, 0400);
 MODULE_PARM_DESC(aggregation, "aggregation ruleset");
-static LIST_HEAD(aggr_n_list);
-static LIST_HEAD(aggr_p_list);
-static DEFINE_RWLOCK(aggr_lock);
-static void aggregation_remove(struct list_head *list);
+struct aggregation_rules {
+	/* Immutable after publication, except for atomic usage counters. */
+	struct list_head nets;
+	struct list_head ports;
+};
+static struct aggregation_rules __rcu *aggr_ruleset;
+static DEFINE_MUTEX(aggr_lock); /* ruleset publication */
+static DEFINE_MUTEX(aggr_config_lock); /* sysctl text buffer */
+static void aggregation_replace(struct aggregation_rules *rules);
 static int add_aggregation(char *ptr);
 #endif
 
@@ -277,20 +282,22 @@ static DEFINE_MUTEX(sock_lock);
 #define LOCK_COUNT_MASK (LOCK_COUNT-1)
 struct stripe_entry {
 	struct list_head list; /* struct ipt_netflow, list for export */
-	spinlock_t lock; /* this locks both: hash table stripe & list above */
-};
+	spinlock_t lock; /* protects list, hash, size and the hash chains */
+	struct hlist_head *hash;
+	unsigned int size;
+	unsigned int offset; /* bucket number shown in flow dumps */
+} ____cacheline_aligned_in_smp;
 static struct stripe_entry htable_stripes[LOCK_COUNT];
-static DEFINE_RWLOCK(htable_rwlock); /* global rwlock to protect htable[] resize */
-static struct hlist_head *htable __read_mostly; /* hash table memory */
+static DEFINE_MUTEX(htable_mutex); /* serialize resizes; never taken by packets */
+static struct hlist_head *htable; /* allocation base, only used by resizers */
 static unsigned int htable_size __read_mostly = 0; /* buckets */
 /* How it's organized:
- *  htable_rwlock locks access to htable[hash], where
- *  htable[htable_size] is big/resizable hash table, which is striped into
- *  htable_stripes[LOCK_COUNT] smaller/static hash table, which contains
- *  .list - list of flows ordered by exportability (usually it's access time)
- *  .lock - lock to both: that .list and to htable[hash], where
- *  hash to the htable[] is hash_netflow(&tuple) % htable_size
- *  hash to the htable_stripes[] is hash & LOCK_COUNT_MASK
+ *  The low hash bits select a fixed stripe, independently of table size.
+ *  Each stripe owns a disjoint range of buckets and a list of flows ordered
+ *  by exportability (usually access time). Its lock protects both, including
+ *  the bucket pointer and size. Resize replaces one stripe at a time without
+ *  moving flows between stripes or changing their export order. Once every
+ *  stripe has switched, no reader can still reference the old allocation.
  */
 #ifdef HAVE_LLIST
 static LLIST_HEAD(export_llist); /* flows to purge */
@@ -654,6 +661,7 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 	struct ipt_netflow_stat t = { 0 };
 	struct ipt_netflow_sock *usock;
 #ifdef ENABLE_AGGR
+	const struct aggregation_rules *aggr_rules;
 	struct netflow_aggr_n *aggr_n;
 	struct netflow_aggr_p *aggr_p;
 #endif
@@ -889,9 +897,11 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 	mutex_unlock(&sock_lock);
 
 #ifdef ENABLE_AGGR
-	read_lock_bh(&aggr_lock);
+	rcu_read_lock();
+	aggr_rules = rcu_dereference(aggr_ruleset);
 	snum = 0;
-	list_for_each_entry(aggr_n, &aggr_n_list, list) {
+	if (aggr_rules)
+	list_for_each_entry(aggr_n, &aggr_rules->nets, list) {
 		seq_printf(seq, "aggr#%d net: match %u.%u.%u.%u/%d strip %d (usage %u)\n",
 		    snum,
 		    HIPQUAD(aggr_n->addr),
@@ -901,7 +911,8 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 		snum++;
 	}
 	snum = 0;
-	list_for_each_entry(aggr_p, &aggr_p_list, list) {
+	if (aggr_rules)
+	list_for_each_entry(aggr_p, &aggr_rules->ports, list) {
 		seq_printf(seq, "aggr#%d port: ports %u-%u replace %u (usage %u)\n",
 		    snum,
 		    aggr_p->port1,
@@ -910,7 +921,7 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 		    atomic_read(&aggr_p->usage));
 		snum++;
 	}
-	read_unlock_bh(&aggr_lock);
+	rcu_read_unlock();
 #endif
 #ifdef SNMP_RULES
 	{
@@ -982,12 +993,13 @@ static inline int inactive_needs_export(const struct ipt_netflow *nf, const long
     const unsigned long jiff);
 static inline int active_needs_export(const struct ipt_netflow *nf, const long a_timeout,
     const unsigned long jiff);
-static inline u_int32_t hash_netflow(const struct ipt_netflow_tuple *tuple);
+static inline u_int32_t __hash_netflow(const struct ipt_netflow_tuple *tuple);
 
 struct flows_dump_private {
 	int pcache;	/* pos */
 	void *vcache;	/* corresponding pointer for pos */
 	int stripe;	/* current stripe */
+	unsigned int hash_size, hash_offset; /* captured with the copied stripe */
 	struct list_head list; /* copy of stripe */
 	int alloc_errors;
 };
@@ -1027,21 +1039,20 @@ static void __nf_copy_stripe(struct flows_dump_private *st, const struct list_he
  * return first element in stripe list or NULL */
 static struct list_head *nf_get_stripe(struct flows_dump_private *st, int nstripe)
 {
-	read_lock_bh(&htable_rwlock);
 	for (; nstripe < LOCK_COUNT; nstripe++) {
 		struct stripe_entry *stripe = &htable_stripes[nstripe];
 
-		spin_lock(&stripe->lock);
+		spin_lock_bh(&stripe->lock);
 		if (!list_empty(&stripe->list)) {
 			st->stripe = nstripe;
+			st->hash_size = stripe->size;
+			st->hash_offset = stripe->offset;
 			__nf_copy_stripe(st, &stripe->list);
-			spin_unlock(&stripe->lock);
-			read_unlock_bh(&htable_rwlock);
+			spin_unlock_bh(&stripe->lock);
 			return st->list.next;
 		}
-		spin_unlock(&stripe->lock);
+		spin_unlock_bh(&stripe->lock);
 	}
-	read_unlock_bh(&htable_rwlock);
 	st->stripe = -1;
 	return NULL;
 }
@@ -1132,7 +1143,7 @@ static int flows_dump_seq_show(struct seq_file *seq, void *v)
 	nf = list_entry(v, struct ipt_netflow, flows_list);
 	seq_printf(seq, "%d %04x %x",
 	    st->pcache,
-	    hash_netflow(&nf->tuple),
+	    st->hash_offset + (__hash_netflow(&nf->tuple) / LOCK_COUNT) % st->hash_size,
 	    (!!inactive_needs_export(nf, i_timeout, jiffies)) | 
 	    (active_needs_export(nf, a_timeout, jiffies) << 1));
 	seq_printf(seq, " %hd,%hd",
@@ -1507,18 +1518,17 @@ unlock:
 static int hsize_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file *filp,)
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
 {
-	int ret, hsize;
+	int ret, hsize = htable_size;
 	ctl_table_no_const lctl = *ctl;
 
 	if (write)
 		lctl.data = &hsize;
 	ret = proc_dointvec(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
-	if (write) {
-		if (hsize < LOCK_COUNT)
-			return -EPERM;
-		return set_hashsize(hsize)?:ret;
-	} else
+	if (ret < 0 || !write)
 		return ret;
+	if (hsize < LOCK_COUNT)
+		return -EPERM;
+	return set_hashsize(hsize);
 }
 
 static int sndbuf_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file *filp,)
@@ -1585,9 +1595,11 @@ static int aggregation_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 
 	if (debug > 1)
 		printk(KERN_INFO "aggregation_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
+	mutex_lock(&aggr_config_lock);
 	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write)
-		return add_aggregation(aggregation_buf);
+		ret = add_aggregation(aggregation_buf);
+	mutex_unlock(&aggr_config_lock);
 	return ret;
 }
 #endif
@@ -2406,27 +2418,49 @@ static int add_destinations(const char *ptr)
 #ifdef ENABLE_AGGR
 static void aggregation_remove(struct list_head *list)
 {
-	write_lock_bh(&aggr_lock);
 	while (!list_empty(list)) {
 		struct netflow_aggr_n *aggr; /* match netflow_aggr_p too */
 
 		aggr = list_entry(list->next, struct netflow_aggr_n, list);
 		list_del(&aggr->list);
-		write_unlock_bh(&aggr_lock);
 		vfree(aggr);
-		write_lock_bh(&aggr_lock);
 	}
-	write_unlock_bh(&aggr_lock);
+}
+
+static void aggregation_free(struct aggregation_rules *rules)
+{
+	if (!rules)
+		return;
+	aggregation_remove(&rules->nets);
+	aggregation_remove(&rules->ports);
+	vfree(rules);
+}
+
+static void aggregation_replace(struct aggregation_rules *rules)
+{
+	struct aggregation_rules *old;
+
+	mutex_lock(&aggr_lock);
+	old = rcu_dereference_protected(aggr_ruleset, lockdep_is_held(&aggr_lock));
+	rcu_assign_pointer(aggr_ruleset, rules);
+	mutex_unlock(&aggr_lock);
+	/* Both lists must remain intact until readers of the old ruleset exit. */
+	synchronize_rcu();
+	aggregation_free(old);
 }
 
 static int add_aggregation(char *ptr)
 {
-	struct netflow_aggr_n *aggr_n, *aggr, *tmp;
+	struct aggregation_rules *rules;
+	struct netflow_aggr_n *aggr_n;
 	struct netflow_aggr_p *aggr_p;
-	LIST_HEAD(new_aggr_n_list);
-	LIST_HEAD(new_aggr_p_list);
-	LIST_HEAD(old_aggr_list);
 	int ret = -EINVAL;
+
+	rules = vmalloc(sizeof(*rules));
+	if (!rules)
+		return -ENOMEM;
+	INIT_LIST_HEAD(&rules->nets);
+	INIT_LIST_HEAD(&rules->ports);
 
 	while (ptr && *ptr) {
 		unsigned char ip[4];
@@ -2456,7 +2490,7 @@ static int add_aggregation(char *ptr)
 			aggr_n->prefix = mask;
 			printk(KERN_INFO "ipt_NETFLOW: add aggregation [%u.%u.%u.%u/%u=%u]\n",
 			       HIPQUAD(aggr_n->addr), mask, aggr_to);
-			list_add_tail(&aggr_n->list, &new_aggr_n_list);
+			list_add_tail(&aggr_n->list, &rules->nets);
 
 		} else {
 			if (sscanf(ptr, "%u-%u=%u", &port1, &port2, &aggr_to) != 3) {
@@ -2479,31 +2513,18 @@ static int add_aggregation(char *ptr)
 			aggr_p->aggr_port = aggr_to;
 			printk(KERN_INFO "ipt_NETFLOW: add aggregation [%u-%u=%u]\n",
 			       port1, port2, aggr_to);
-			list_add_tail(&aggr_p->list, &new_aggr_p_list);
+			list_add_tail(&aggr_p->list, &rules->ports);
 		}
 
 		ptr = strpbrk(ptr, SEPARATORS);
 	}
 
-	/* swap lists */
-	write_lock_bh(&aggr_lock);
-	list_for_each_entry_safe(aggr, tmp, &aggr_n_list, list)
-		list_move(&aggr->list, &old_aggr_list);
-	list_for_each_entry_safe(aggr, tmp, &aggr_p_list, list)
-		list_move(&aggr->list, &old_aggr_list);
-
-	list_for_each_entry_safe(aggr, tmp, &new_aggr_n_list, list)
-		list_move_tail(&aggr->list, &aggr_n_list);
-	list_for_each_entry_safe(aggr, tmp, &new_aggr_p_list, list)
-		list_move_tail(&aggr->list, &aggr_p_list);
-	write_unlock_bh(&aggr_lock);
-	aggregation_remove(&old_aggr_list);
+	aggregation_replace(rules);
 	return 0;
 bad_rule:
 	printk(KERN_ERR "ipt_NETFLOW: bad aggregation rule: %s\n", ptr);
 err:
-	aggregation_remove(&new_aggr_n_list);
-	aggregation_remove(&new_aggr_p_list);
+	aggregation_free(rules);
 	return ret;
 }
 #endif
@@ -2519,17 +2540,20 @@ static inline u_int32_t __hash_netflow(const struct ipt_netflow_tuple *tuple)
 	return murmur3(tuple, sizeof(struct ipt_netflow_tuple), HASH_SEED);
 }
 
-static inline u_int32_t hash_netflow(const struct ipt_netflow_tuple *tuple)
+/* Caller holds the stripe lock. Discard the bits used to select the stripe. */
+static inline unsigned int stripe_hash(const struct stripe_entry *stripe,
+				       const u_int32_t hash)
 {
-	return __hash_netflow(tuple) % htable_size;
+	return (hash / LOCK_COUNT) % stripe->size;
 }
 
 static struct ipt_netflow *
-ipt_netflow_find(const struct ipt_netflow_tuple *tuple, const unsigned int hash)
+ipt_netflow_find(const struct ipt_netflow_tuple *tuple,
+		const struct hlist_head *head)
 {
 	struct ipt_netflow *nf;
 
-	compat_hlist_for_each_entry(nf, pos, &htable[hash], hlist) {
+	compat_hlist_for_each_entry(nf, pos, head, hlist) {
 		if (ipt_netflow_tuple_equal(tuple, &nf->tuple) &&
 		    nf->nr_bytes < FLOW_FULL_WATERMARK) {
 			NETFLOW_STAT_INC(found);
@@ -2559,43 +2583,42 @@ static struct hlist_head *alloc_hashtable(const int size)
 
 static int set_hashsize(int new_size)
 {
-	struct hlist_head *new_hash, *old_hash;
-	struct ipt_netflow *nf, *tmp;
-	LIST_HEAD(all_list);
+	struct hlist_head *new_hash, *old_hash, *buckets;
+	struct ipt_netflow *nf;
 	int i;
 
 	if (new_size < LOCK_COUNT)
 		new_size = LOCK_COUNT;
-	printk(KERN_INFO "ipt_NETFLOW: allocating new hash table %u -> %u buckets\n",
-	       htable_size, new_size);
 	new_hash = alloc_hashtable(new_size);
 	if (!new_hash)
 		return -ENOMEM;
 
-	/* rehash */
-	write_lock_bh(&htable_rwlock);
+	mutex_lock(&htable_mutex);
+	printk(KERN_INFO "ipt_NETFLOW: allocating new hash table %u -> %u buckets\n",
+	       htable_size, new_size);
 	old_hash = htable;
-	htable = new_hash;
-	htable_size = new_size;
+	buckets = new_hash;
 	for (i = 0; i < LOCK_COUNT; i++) {
 		struct stripe_entry *stripe = &htable_stripes[i];
-		spin_lock(&stripe->lock);
-		list_splice_init(&stripe->list, &all_list);
-		spin_unlock(&stripe->lock);
-	}
-	list_for_each_entry_safe(nf, tmp, &all_list, flows_list) {
-		unsigned int hash;
-		struct stripe_entry *stripe;
 
-		hash = hash_netflow(&nf->tuple);
-		stripe = &htable_stripes[hash & LOCK_COUNT_MASK];
-		spin_lock(&stripe->lock);
-		list_move_tail(&nf->flows_list, &stripe->list);
-		hlist_add_head(&nf->hlist, &htable[hash]);
-		spin_unlock(&stripe->lock);
+		spin_lock_bh(&stripe->lock);
+		stripe->hash = buckets;
+		/* Preserve the requested total even for non-multiples of LOCK_COUNT. */
+		stripe->size = new_size / LOCK_COUNT + (i < new_size % LOCK_COUNT);
+		stripe->offset = buckets - new_hash;
+		list_for_each_entry(nf, &stripe->list, flows_list) {
+			unsigned int hash = stripe_hash(stripe, __hash_netflow(&nf->tuple));
+
+			hlist_del(&nf->hlist);
+			hlist_add_head(&nf->hlist, &stripe->hash[hash]);
+		}
+		buckets += stripe->size;
+		spin_unlock_bh(&stripe->lock);
 	}
-	write_unlock_bh(&htable_rwlock);
+	htable = new_hash;
+	htable_size = new_size;
 	vfree(old_hash);
+	mutex_unlock(&htable_mutex);
 
 	return 0;
 }
@@ -4428,11 +4451,10 @@ static int netflow_scan_and_export(const int flush)
 		export_ifnames();
 	}
 
-	read_lock_bh(&htable_rwlock);
 	for (i = 0; i < LOCK_COUNT; i++) {
 		struct stripe_entry *stripe = &htable_stripes[i];
 
-		if (!spin_trylock(&stripe->lock)) {
+		if (!spin_trylock_bh(&stripe->lock)) {
 			++wk_trylock;
 			continue;
 		}
@@ -4448,9 +4470,8 @@ static int netflow_scan_and_export(const int flush)
 				break;
 			}
 		}
-		spin_unlock(&stripe->lock);
+		spin_unlock_bh(&stripe->lock);
 	}
-	read_unlock_bh(&htable_rwlock);
 
 #ifdef HAVE_LLIST
 	node = llist_del_all(&export_llist);
@@ -4987,6 +5008,7 @@ static unsigned int netflow_target(
 	struct ipt_netflow *nf;
 	__u8 tcp_flags;
 #ifdef ENABLE_AGGR
+	const struct aggregation_rules *aggr_rules;
 	struct netflow_aggr_n *aggr_n;
 	struct netflow_aggr_p *aggr_p;
 #endif
@@ -5195,16 +5217,17 @@ do_protocols:
 
 #ifdef ENABLE_AGGR
 	/* aggregate networks */
-	read_lock_bh(&aggr_lock);
-	if (family == AF_INET) {
-		list_for_each_entry(aggr_n, &aggr_n_list, list)
+	rcu_read_lock();
+	aggr_rules = rcu_dereference(aggr_ruleset);
+	if (aggr_rules && family == AF_INET) {
+		list_for_each_entry(aggr_n, &aggr_rules->nets, list)
 			if (unlikely((ntohl(tuple.src.ip) & aggr_n->mask) == aggr_n->addr)) {
 				tuple.src.ip &= htonl(aggr_n->aggr_mask);
 				s_mask = aggr_n->prefix;
 				atomic_inc(&aggr_n->usage);
 				break;
 			}
-		list_for_each_entry(aggr_n, &aggr_n_list, list)
+		list_for_each_entry(aggr_n, &aggr_rules->nets, list)
 			if (unlikely((ntohl(tuple.dst.ip) & aggr_n->mask) == aggr_n->addr)) {
 				tuple.dst.ip &= htonl(aggr_n->aggr_mask);
 				d_mask = aggr_n->prefix;
@@ -5213,12 +5236,12 @@ do_protocols:
 			}
 	}
 
-	if (tuple.protocol == IPPROTO_TCP ||
+	if (aggr_rules && (tuple.protocol == IPPROTO_TCP ||
 	    tuple.protocol == IPPROTO_UDP ||
 	    tuple.protocol == IPPROTO_SCTP ||
-	    tuple.protocol == IPPROTO_UDPLITE) {
+	    tuple.protocol == IPPROTO_UDPLITE)) {
 		/* aggregate ports */
-		list_for_each_entry(aggr_p, &aggr_p_list, list)
+		list_for_each_entry(aggr_p, &aggr_rules->ports, list)
 			if (unlikely(ntohs(tuple.s_port) >= aggr_p->port1 &&
 			    ntohs(tuple.s_port) <= aggr_p->port2)) {
 				tuple.s_port = htons(aggr_p->aggr_port);
@@ -5226,7 +5249,7 @@ do_protocols:
 				break;
 			}
 
-		list_for_each_entry(aggr_p, &aggr_p_list, list)
+		list_for_each_entry(aggr_p, &aggr_rules->ports, list)
 			if (unlikely(ntohs(tuple.d_port) >= aggr_p->port1 &&
 			    ntohs(tuple.d_port) <= aggr_p->port2)) {
 				tuple.d_port = htons(aggr_p->aggr_port);
@@ -5234,7 +5257,7 @@ do_protocols:
 				break;
 			}
 	}
-	read_unlock_bh(&aggr_lock);
+	rcu_read_unlock();
 #endif
 
 #ifdef SAMPLING_HASH
@@ -5249,15 +5272,14 @@ do_protocols:
 			NETFLOW_STAT_INC(pkts_selected);
 		}
 	}
-	hash %= htable_size;
 #else /* !SAMPLING_HASH */
-	hash = hash_netflow(&tuple);
+	hash = __hash_netflow(&tuple);
 #endif
-	read_lock_bh(&htable_rwlock);
 	stripe = &htable_stripes[hash & LOCK_COUNT_MASK];
-	spin_lock(&stripe->lock);
+	spin_lock_bh(&stripe->lock);
+	hash = stripe_hash(stripe, hash);
 	/* record */
-	nf = ipt_netflow_find(&tuple, hash);
+	nf = ipt_netflow_find(&tuple, &stripe->hash[hash]);
 	if (unlikely(!nf)) {
 		struct rtable *rt;
 
@@ -5278,7 +5300,7 @@ do_protocols:
 			NETFLOW_STAT_TS(drop);
 			goto unlock_return;
 		}
-		hlist_add_head(&nf->hlist, &htable[hash]);
+		hlist_add_head(&nf->hlist, &stripe->hash[hash]);
 
 #ifdef ENABLE_SAMPLER
 		/* I only increment if deterministic sampler is enabled to
@@ -5389,8 +5411,7 @@ do_protocols:
 	}
 
 unlock_return:
-	spin_unlock(&stripe->lock);
-	read_unlock_bh(&htable_rwlock);
+	spin_unlock_bh(&stripe->lock);
 
 	return IPT_CONTINUE;
 }
@@ -5710,6 +5731,11 @@ static int __init ipt_netflow_init(void)
 	for (i = 0; i < LOCK_COUNT; i++) {
 		spin_lock_init(&htable_stripes[i].lock);
 		INIT_LIST_HEAD(&htable_stripes[i].list);
+		htable_stripes[i].size = htable_size / LOCK_COUNT +
+			(i < htable_size % LOCK_COUNT);
+		htable_stripes[i].hash = i ? htable_stripes[i - 1].hash +
+			htable_stripes[i - 1].size : htable;
+		htable_stripes[i].offset = htable_stripes[i].hash - htable;
 	}
 
 	ipt_netflow_cachep = kmem_cache_create("ipt_netflow",
@@ -5759,6 +5785,7 @@ static int __init ipt_netflow_init(void)
 		goto err_free_destinations;
 
 #ifdef ENABLE_AGGR
+	mutex_lock(&aggr_config_lock);
 	if (!aggregation)
 		aggregation = aggregation_buf;
 	if (aggregation != aggregation_buf) {
@@ -5766,6 +5793,7 @@ static int __init ipt_netflow_init(void)
 		aggregation = aggregation_buf;
 	}
 	ret = add_aggregation(aggregation);
+	mutex_unlock(&aggr_config_lock);
 	if (ret < 0)
 		goto err_free_aggregation;
 #endif
@@ -5858,8 +5886,6 @@ err_stop_timer:
 	free_templates();
 #ifdef ENABLE_AGGR
 err_free_aggregation:
-	aggregation_remove(&aggr_n_list);
-	aggregation_remove(&aggr_p_list);
 #endif
 err_free_destinations:
 	destination_removeall();
@@ -5875,6 +5901,9 @@ err_free_proc_stat2:
 err_free_proc_stat1:
 	remove_proc_entry("ipt_netflow", INIT_NET(proc_net_stat));
 err_free_netflow_slab:
+#endif
+#ifdef ENABLE_AGGR
+	aggregation_replace(NULL);
 #endif
 #ifdef SNMP_RULES
 	synchronize_rcu();
@@ -5923,8 +5952,7 @@ static void __exit ipt_netflow_fini(void)
 	free_templates();
 	destination_removeall();
 #ifdef ENABLE_AGGR
-	aggregation_remove(&aggr_n_list);
-	aggregation_remove(&aggr_p_list);
+	aggregation_replace(NULL);
 #endif
 #ifdef SNMP_RULES
 	kfree(snmp_ruleset);

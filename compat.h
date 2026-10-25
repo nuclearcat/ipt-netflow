@@ -9,6 +9,13 @@
 #define COMPAT_NETFLOW_H
 #include "compat_def.h"
 
+#ifndef __rcu
+# define __rcu
+#endif
+#ifndef rcu_dereference_protected
+# define rcu_dereference_protected(p, c) (p)
+#endif
+
 #ifndef NIPQUAD
 # define NIPQUAD(addr) \
 	((unsigned char *)&addr)[0], \
