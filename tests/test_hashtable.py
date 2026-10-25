@@ -39,9 +39,11 @@ prefix = r'''
 #define KERN_INFO ""
 #define printk(...) ((void)0)
 #define NETFLOW_STAT_INC(x) ((void)0)
+static pthread_mutex_t htable_mutex;
+static _Thread_local unsigned resize_lock_depth;
 #define DEFINE_MUTEX(n) pthread_mutex_t n=PTHREAD_MUTEX_INITIALIZER
-#define mutex_lock(p) assert(!pthread_mutex_lock(p))
-#define mutex_unlock(p) assert(!pthread_mutex_unlock(p))
+#define mutex_lock(p) do {assert(!pthread_mutex_lock(p));if((p)==&htable_mutex)resize_lock_depth++;} while(0)
+#define mutex_unlock(p) do {if((p)==&htable_mutex){assert(resize_lock_depth==1);resize_lock_depth--;}assert(!pthread_mutex_unlock(p));} while(0)
 typedef struct ctl_table {void *data;} ctl_table_no_const;
 #define PROC_CTL_TABLE struct ctl_table
 #define BEFORE2632(a,b)
@@ -77,8 +79,18 @@ struct ipt_netflow_tuple {uint32_t id;};
 struct ipt_netflow {struct hlist_node hlist;struct list_head flows_list;struct ipt_netflow_tuple tuple;uint64_t nr_bytes,nr_packets;};
 #define ipt_netflow_tuple_equal(a,b) ((a)->id==(b)->id)
 #define FLOW_FULL_WATERMARK UINT64_MAX
-static atomic_int fail_alloc,live_tables;
-static void *vmalloc(size_t size) {if(atomic_exchange(&fail_alloc,0))return NULL;void *p=malloc(size);if(p)live_tables++;return p;}
+static atomic_int fail_alloc,live_tables,peak_tables;
+static int expect_resize_lock;
+static void *vmalloc(size_t size) {
+ if(expect_resize_lock)assert(resize_lock_depth==1);
+ if(atomic_exchange(&fail_alloc,0))return NULL;
+ void *p=malloc(size);
+ if(p) {
+  int live=++live_tables,peak=peak_tables;
+  while(live>peak && !atomic_compare_exchange_weak(&peak_tables,&peak,live)) {}
+ }
+ return p;
+}
 static void vfree(void *p) {if(p){live_tables--;free(p);}}
 #include "murmur3.h"
 struct sampling {unsigned mode,interval;};
@@ -192,6 +204,7 @@ int main(void) {
  htable_size=1021;htable=alloc_hashtable(htable_size);assert(htable);
 '''
 end = r'''
+ expect_resize_lock=1;
  for(unsigned id=0;id<STEADY;id++) account(id);
  verify();
 #ifdef SAMPLING_HASH
@@ -228,6 +241,7 @@ end = r'''
  for(unsigned n=0;n<4;n++) assert(!pthread_join(workers[n],NULL));
  for(unsigned n=0;n<2;n++) assert(!pthread_join(resize[n],NULL));
  stop=1;assert(!pthread_join(scan_thread,NULL));
+ assert(peak_tables==2);
  assert(!pthread_barrier_destroy(&start_workers));
  verify();export_scan();verify();
  for(unsigned n=0;n<LOCK_COUNT;n++) {

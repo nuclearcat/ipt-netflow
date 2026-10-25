@@ -2605,11 +2605,13 @@ static int set_hashsize(int new_size)
 
 	if (new_size < LOCK_COUNT)
 		new_size = LOCK_COUNT;
-	new_hash = alloc_hashtable(new_size);
-	if (!new_hash)
-		return -ENOMEM;
-
 	mutex_lock(&htable_mutex);
+	new_hash = alloc_hashtable(new_size);
+	if (!new_hash) {
+		mutex_unlock(&htable_mutex);
+		return -ENOMEM;
+	}
+
 	printk(KERN_INFO "ipt_NETFLOW: allocating new hash table %u -> %u buckets\n",
 	       htable_size, new_size);
 	old_hash = htable;
