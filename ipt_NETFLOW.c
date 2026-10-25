@@ -992,7 +992,6 @@ static inline int inactive_needs_export(const struct ipt_netflow *nf, const long
     const unsigned long jiff);
 static inline int active_needs_export(const struct ipt_netflow *nf, const long a_timeout,
     const unsigned long jiff);
-static inline u_int32_t __hash_netflow(const struct ipt_netflow_tuple *tuple);
 
 struct flows_dump_private {
 	int pcache;	/* pos */
@@ -1142,7 +1141,7 @@ static int flows_dump_seq_show(struct seq_file *seq, void *v)
 	nf = list_entry(v, struct ipt_netflow, flows_list);
 	seq_printf(seq, "%d %04x %x",
 	    st->pcache,
-	    st->hash_offset + (__hash_netflow(&nf->tuple) / LOCK_COUNT) % st->hash_size,
+	    st->hash_offset + (nf->hash / LOCK_COUNT) % st->hash_size,
 	    (!!inactive_needs_export(nf, i_timeout, jiffies)) | 
 	    (active_needs_export(nf, a_timeout, jiffies) << 1));
 	seq_printf(seq, " %hd,%hd",
@@ -2627,7 +2626,7 @@ static int set_hashsize(int new_size)
 		stripe->size = new_size / LOCK_COUNT + (i < new_size % LOCK_COUNT);
 		stripe->offset = buckets - new_hash;
 		list_for_each_entry(nf, &stripe->list, flows_list) {
-			unsigned int hash = stripe_hash(stripe, __hash_netflow(&nf->tuple));
+			unsigned int hash = stripe_hash(stripe, nf->hash);
 
 			hlist_del(&nf->hlist);
 			hlist_add_head(&nf->hlist, &stripe->hash[hash]);
@@ -2644,7 +2643,7 @@ static int set_hashsize(int new_size)
 }
 
 static struct ipt_netflow *
-ipt_netflow_alloc(const struct ipt_netflow_tuple *tuple)
+ipt_netflow_alloc(const struct ipt_netflow_tuple *tuple, const u_int32_t hash)
 {
 	struct ipt_netflow *nf;
 	long count;
@@ -2657,6 +2656,7 @@ ipt_netflow_alloc(const struct ipt_netflow_tuple *tuple)
 
 	memset(nf, 0, sizeof(*nf));
 	nf->tuple = *tuple;
+	nf->hash = hash;
 
 	count = atomic_inc_return(&ipt_netflow_count);
 	if (count > peakflows) {
@@ -5020,6 +5020,7 @@ static unsigned int netflow_target(
 		struct ipv6hdr ip6;
 	} _iph, *iph;
 	u_int32_t hash;
+	unsigned int bucket;
 # ifdef ENABLE_DIRECTION
 	const int hooknum = xt_hooknum(par);
 # endif
@@ -5297,9 +5298,9 @@ do_protocols:
 #endif
 	stripe = &htable_stripes[hash & LOCK_COUNT_MASK];
 	spin_lock_bh(&stripe->lock);
-	hash = stripe_hash(stripe, hash);
+	bucket = stripe_hash(stripe, hash);
 	/* record */
-	nf = ipt_netflow_find(&tuple, &stripe->hash[hash]);
+	nf = ipt_netflow_find(&tuple, &stripe->hash[bucket]);
 	if (unlikely(!nf)) {
 		struct rtable *rt;
 
@@ -5312,7 +5313,7 @@ do_protocols:
 			goto unlock_return;
 		}
 
-		nf = ipt_netflow_alloc(&tuple);
+		nf = ipt_netflow_alloc(&tuple, hash);
 		if (unlikely(!nf || IS_ERR(nf))) {
 			NETFLOW_STAT_INC(alloc_err);
 			NETFLOW_STAT_INC(pkt_drop);
@@ -5320,7 +5321,7 @@ do_protocols:
 			NETFLOW_STAT_TS(drop);
 			goto unlock_return;
 		}
-		hlist_add_head(&nf->hlist, &stripe->hash[hash]);
+		hlist_add_head(&nf->hlist, &stripe->hash[bucket]);
 
 #ifdef ENABLE_SAMPLER
 		/* I only increment if deterministic sampler is enabled to

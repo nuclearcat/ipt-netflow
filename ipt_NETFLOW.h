@@ -335,6 +335,7 @@ struct ipt_netflow {
 	u_int32_t	flow_label; /* IPv6 */
 	u_int32_t	options; /* IPv4(16) & IPv6(32) Options */
 	u_int32_t	tcpoptions;
+	u_int32_t	hash; /* immutable full tuple hash, reused during resize */
 #ifdef CONFIG_NF_NAT_NEEDED
 	__be32		s_as;
 	__be32		d_as;

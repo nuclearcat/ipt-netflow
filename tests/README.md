@@ -37,8 +37,10 @@ The hash-table check exercises the production lookup, resize and
 export-scan code with pthread locks, both with and without hash sampling. It
 checks non-power-of-two sizes, allocation failure, export-list ordering, bucket
 links, and packet/byte conservation during concurrent updates, exports and two
-resizers. These substitutes validate the locking and lifetime contracts; they
-do not emulate the kernel's RCU implementation or interrupt context.
+resizers. It also checks no-op writes, a two-table allocation peak, cached tuple
+hashes, and that resizing performs no tuple hashing. These substitutes validate
+the locking and lifetime contracts; they do not emulate the kernel's RCU
+implementation or interrupt context.
 
 For live validation of the reader-lock change, use a test kernel with lockdep,
 RCU debugging and KASAN, drive traffic on several CPUs, and alternate hash sizes

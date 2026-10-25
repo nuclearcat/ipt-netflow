@@ -20,6 +20,8 @@ start = src.index('\tfor (i = 0; i < LOCK_COUNT; i++) {\n\t\tspin_lock_init')
 init = src[start:src.index('\n\t}\n', start) + len('\n\t}\n')]
 start = src.index('\tfor (i = 0; i < LOCK_COUNT; i++) {', src.index('static int netflow_scan_and_export(const int flush)\n{'))
 scan = src[start:src.index('\n#ifdef HAVE_LLIST', start)]
+start = src.index('\tnf->tuple = *tuple;', src.index('ipt_netflow_alloc('))
+flow_init = src[start:src.index('\n\n', start)]
 prefix = r'''
 #include <assert.h>
 #include <errno.h>
@@ -77,7 +79,7 @@ struct hlist_head {struct hlist_node *first;};
 static void hlist_del(struct hlist_node *n) {*n->pprev=n->next;if(n->next)n->next->pprev=n->pprev;n->next=NULL;n->pprev=NULL;}
 static void hlist_add_head(struct hlist_node *n,struct hlist_head *h) {n->next=h->first;if(n->next)n->next->pprev=&n->next;n->pprev=&h->first;h->first=n;}
 struct ipt_netflow_tuple {uint32_t id;};
-struct ipt_netflow {struct hlist_node hlist;struct list_head flows_list;struct ipt_netflow_tuple tuple;uint64_t nr_bytes,nr_packets;};
+struct ipt_netflow {struct hlist_node hlist;struct list_head flows_list;struct ipt_netflow_tuple tuple;uint64_t nr_bytes,nr_packets;uint32_t hash;};
 #define ipt_netflow_tuple_equal(a,b) ((a)->id==(b)->id)
 #define FLOW_FULL_WATERMARK UINT64_MAX
 static atomic_int fail_alloc,live_tables,peak_tables;
@@ -94,12 +96,24 @@ static void *vmalloc(size_t size) {
 }
 static void vfree(void *p) {if(p){live_tables--;free(p);}}
 #include "murmur3.h"
+static atomic_ullong hash_calls;
+static uint32_t counted_murmur3(const void *p,uint32_t n,uint32_t seed) {
+ hash_calls++;return murmur3(p,n,seed);
+}
+#define murmur3(p,n,s) counted_murmur3(p,n,s)
 struct sampling {unsigned mode,interval;};
 static struct sampling samp;
 #define SAMPLER_HASH 3
 #define IPT_CONTINUE 0
 typedef uint32_t u32;
 typedef uint64_t u64;
+'''
+allocation = r'''
+static struct ipt_netflow *allocate(const struct ipt_netflow_tuple *tuple,uint32_t hash) {
+ struct ipt_netflow *nf=calloc(1,sizeof(*nf));assert(nf);
+''' + flow_init + r'''
+ return nf;
+}
 '''
 account = r'''
 static atomic_ullong accounted,exported,accounted_bytes,exported_bytes;
@@ -108,11 +122,12 @@ static unsigned int account(uint32_t id) {
  struct stripe_entry *stripe;
  struct ipt_netflow *nf;
  uint32_t hash;
+ unsigned int bucket;
 '''
 account_end = r'''
  if(!nf) {
-  nf=calloc(1,sizeof(*nf));assert(nf);nf->tuple=tuple;
-  hlist_add_head(&nf->hlist,&stripe->hash[hash]);
+  nf=allocate(&tuple,hash);
+  hlist_add_head(&nf->hlist,&stripe->hash[bucket]);
   list_add(&nf->flows_list,&stripe->list);
  }
  unsigned bytes=40+id%1500;
@@ -152,6 +167,7 @@ static void verify(void) {
   struct ipt_netflow *nf;
   list_for_each_entry(nf,&s->list,flows_list) {
    uint32_t hash=__hash_netflow(&nf->tuple);
+   assert(nf->hash==hash);
    assert((hash&LOCK_COUNT_MASK)==i);
    assert(ipt_netflow_find(&nf->tuple,&s->hash[stripe_hash(s,hash)])==nf);
    bytes+=nf->nr_bytes;packets+=nf->nr_packets;listed++;
@@ -221,7 +237,9 @@ end = r'''
  uint64_t original_order=order();
  const int sizes[]={256,257,511,512,513,65537,1021,1};
  for(unsigned n=0;n<sizeof(sizes)/sizeof(*sizes);n++) {
-  assert(!set_hashsize(sizes[n]));verify();assert(order()==original_order);
+  uint64_t calls=hash_calls;
+  assert(!set_hashsize(sizes[n]));assert(hash_calls==calls);
+  verify();assert(order()==original_order);
  }
  struct hlist_head *old=htable;unsigned oldsize=htable_size;
  struct ctl_table ctl={&htable_size};size_t len=1;loff_t pos=0;
@@ -266,7 +284,7 @@ end = r'''
 '''
 with tempfile.TemporaryDirectory(prefix='ipt-netflow-test-') as tmp:
     out = Path(tmp)
-    code = prefix + stripes + helpers + sysctl + account + lookup + account_end + scan + scan_end + suffix + init + end
+    code = prefix + stripes + helpers + sysctl + allocation + account + lookup + account_end + scan + scan_end + suffix + init + end
     (out / 'hashtable.c').write_text(code)
     for options in ([], ['-DSAMPLING_HASH']):
         subprocess.run(['gcc', '-g', '-O1', '-pthread', '-fsanitize=address,undefined',
