@@ -898,27 +898,27 @@ static int nf_seq_show(struct seq_file *seq, void *v)
 #ifdef ENABLE_AGGR
 	rcu_read_lock();
 	aggr_rules = rcu_dereference(aggr_ruleset);
-	snum = 0;
-	if (aggr_rules)
-	list_for_each_entry(aggr_n, &aggr_rules->nets, list) {
-		seq_printf(seq, "aggr#%d net: match %u.%u.%u.%u/%d strip %d (usage %u)\n",
-		    snum,
-		    HIPQUAD(aggr_n->addr),
-		    mask2bits(aggr_n->mask),
-		    mask2bits(aggr_n->aggr_mask),
-		    atomic_read(&aggr_n->usage));
-		snum++;
-	}
-	snum = 0;
-	if (aggr_rules)
-	list_for_each_entry(aggr_p, &aggr_rules->ports, list) {
-		seq_printf(seq, "aggr#%d port: ports %u-%u replace %u (usage %u)\n",
-		    snum,
-		    aggr_p->port1,
-		    aggr_p->port2,
-		    aggr_p->aggr_port,
-		    atomic_read(&aggr_p->usage));
-		snum++;
+	if (aggr_rules) {
+		snum = 0;
+		list_for_each_entry(aggr_n, &aggr_rules->nets, list) {
+			seq_printf(seq, "aggr#%d net: match %u.%u.%u.%u/%d strip %d (usage %u)\n",
+			    snum,
+			    HIPQUAD(aggr_n->addr),
+			    mask2bits(aggr_n->mask),
+			    mask2bits(aggr_n->aggr_mask),
+			    atomic_read(&aggr_n->usage));
+			snum++;
+		}
+		snum = 0;
+		list_for_each_entry(aggr_p, &aggr_rules->ports, list) {
+			seq_printf(seq, "aggr#%d port: ports %u-%u replace %u (usage %u)\n",
+			    snum,
+			    aggr_p->port1,
+			    aggr_p->port2,
+			    aggr_p->aggr_port,
+			    atomic_read(&aggr_p->usage));
+			snum++;
+		}
 	}
 	rcu_read_unlock();
 #endif
