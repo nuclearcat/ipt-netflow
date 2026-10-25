@@ -31,7 +31,9 @@ snapshots, long/unterminated lines, and rejection of unsupported table types.
 
 The aggregation check also runs the packet aggregation code during concurrent
 ruleset replacement and holds an old reader across publication to check delayed
-reclamation. The hash-table check exercises the production lookup, resize and
+reclamation. It checks teardown with both modern and legacy RCU-sched branches,
+including a retained ordinary RCU reader and the number of grace-period waits.
+The hash-table check exercises the production lookup, resize and
 export-scan code with pthread locks, both with and without hash sampling. It
 checks non-power-of-two sizes, allocation failure, export-list ordering, bucket
 links, and packet/byte conservation during concurrent updates, exports and two

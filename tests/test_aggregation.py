@@ -13,6 +13,9 @@ start = src.index('static void aggregation_free(struct aggregation_rules *rules)
 body = src[start:src.index('\n#endif', start)]
 start = src.index('static int aggregation_procctl(')
 handler = src[start:src.index('\n#endif', start)]
+start = src.index('/* Reader entry points are gone;', src.index('static void __exit ipt_netflow_fini('))
+start = src.rfind('#ifdef ENABLE_AGGR', 0, start)
+teardown = src[start:src.index('\n\tfree_templates();', start)]
 start = src.index('\t/* aggregate networks */', src.index('static unsigned int netflow_target('))
 packet = src[start:src.index('\n#endif', start)]
 prefix = r'''
@@ -52,7 +55,10 @@ static pthread_rwlock_t readers=PTHREAD_RWLOCK_INITIALIZER;
 #define rcu_assign_pointer(p,v) atomic_store_explicit(&(p),v,memory_order_release)
 #define rcu_dereference(p) atomic_load_explicit(&(p),memory_order_acquire)
 #define rcu_dereference_protected(p,c) (assert(c),rcu_dereference(p))
-static void synchronize_rcu(void) { assert(!pthread_rwlock_wrlock(&readers));assert(!pthread_rwlock_unlock(&readers)); }
+static atomic_int rcu_waits,sched_waits;
+static void synchronize_rcu(void) {rcu_waits++;assert(!pthread_rwlock_wrlock(&readers));assert(!pthread_rwlock_unlock(&readers));}
+/* Deliberately does not drain ordinary RCU readers on the legacy branch. */
+static void synchronize_sched(void) {sched_waits++;}
 #define atomic_inc(p) atomic_fetch_add(p,1)
 #define unlikely(x) (x)
 #define KERN_ERR ""
@@ -111,6 +117,14 @@ static struct result apply(int family, int protocol) {
 '''
 apply_end = r'''
  return (struct result){ntohl(tuple.src.ip),ntohl(tuple.dst.ip),ntohs(tuple.s_port),ntohs(tuple.d_port),s_mask,d_mask};
+}
+'''
+teardown_fn = r'''
+static void *destroy(void *unused) {
+ struct aggregation_rules *old_aggr;
+''' + teardown + r'''
+ aggregation_free(old_aggr);
+ return NULL;
 }
 '''
 suffix = r'''
@@ -209,15 +223,32 @@ int main(void) {
  assert(sysctl_write(empty)==0 && live==1);check_readback(empty);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81 && r.dport==3128);
- mutex_lock(&aggr_config_lock);aggregation_replace(NULL);mutex_unlock(&aggr_config_lock);
+ rcu_waits=0;sched_waits=0;
+ rcu_read_lock();
+ assert(!pthread_create(&writer,NULL,destroy,NULL));
+ while(rcu_dereference(aggr_ruleset))sched_yield();
+ assert(live==1); /* Detached state remains alive until the reader exits. */
+ rcu_read_unlock();assert(!pthread_join(writer,NULL));
+ assert(rcu_waits==1);
+#ifdef HAVE_SYNCHRONIZE_SCHED
+ assert(sched_waits==1);
+#else
+ assert(sched_waits==0);
+#endif
  assert(!rcu_dereference(aggr_ruleset) && live==0 && !heap_live && !vm_live);
+ /* Initialization unwind still uses the synchronous replacement helper. */
+ assert(!set_aggregation(good));
+ mutex_lock(&aggr_config_lock);aggregation_replace(NULL);mutex_unlock(&aggr_config_lock);
+ assert(!live);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81);
  puts("aggregation validation, rollback, packet semantics and concurrent RCU replacement checks passed");
 }
 '''
-(out / 'aggregation.c').write_text(prefix + body + handler + apply + packet + apply_end + suffix)
-subprocess.run(['gcc', '-g', '-O1', '-pthread', '-fsanitize=address,undefined',
-                str(out / 'aggregation.c'), '-o', str(out / 'aggregation')], check=True)
-subprocess.run([str(out / 'aggregation')], check=True, timeout=60,
-               env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))
+(out / 'aggregation.c').write_text(prefix + body + handler + apply + packet + apply_end + teardown_fn + suffix)
+for options in ([], ['-DHAVE_SYNCHRONIZE_SCHED']):
+    subprocess.run(['gcc', '-g', '-O1', '-pthread', '-DENABLE_AGGR', *options,
+                    '-fsanitize=address,undefined', str(out / 'aggregation.c'),
+                    '-o', str(out / 'aggregation')], check=True)
+    subprocess.run([str(out / 'aggregation')], check=True, timeout=60,
+                   env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))

@@ -5941,6 +5941,10 @@ err:
 
 static void __exit ipt_netflow_fini(void)
 {
+#ifdef ENABLE_AGGR
+	struct aggregation_rules *old_aggr;
+#endif
+
 	printk(KERN_INFO "ipt_NETFLOW unloading..\n");
 
 #ifdef CONFIG_SYSCTL
@@ -5965,18 +5969,26 @@ static void __exit ipt_netflow_fini(void)
 	netflow_scan_and_export(AND_FLUSH);
 	del_timer_sync(&rate_timer);
 
+#ifdef ENABLE_AGGR
+	/* Reader entry points are gone; detach before the final grace period. */
+	mutex_lock(&aggr_config_lock);
+	old_aggr = rcu_dereference_protected(aggr_ruleset,
+					  lockdep_is_held(&aggr_config_lock));
+	rcu_assign_pointer(aggr_ruleset, NULL);
+	mutex_unlock(&aggr_config_lock);
+#endif
 #ifdef HAVE_SYNCHRONIZE_SCHED
 	synchronize_sched();
-#else
+#endif
+#if !defined(HAVE_SYNCHRONIZE_SCHED) || defined(ENABLE_AGGR)
+	/* Older RCU-sched waits do not cover preemptible aggregation readers. */
 	synchronize_rcu();
 #endif
 
 	free_templates();
 	destination_removeall();
 #ifdef ENABLE_AGGR
-	mutex_lock(&aggr_config_lock);
-	aggregation_replace(NULL);
-	mutex_unlock(&aggr_config_lock);
+	aggregation_free(old_aggr);
 #endif
 #ifdef SNMP_RULES
 	kfree(snmp_ruleset);
