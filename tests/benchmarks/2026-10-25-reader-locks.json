@@ -1,0 +1,480 @@
+{
+  "before": {
+    "windows": [
+      {
+        "samples": 47086,
+        "period": 365815983854,
+        "netflow_period": 9671085935,
+        "netflow_samples": 1307,
+        "netflow_self_period": 5212291191,
+        "spinlock_period": 3007517275,
+        "counter_seconds": 21.210000000020955,
+        "perf_seconds": 20.002090672,
+        "accounted_pps": 952993.3521914206,
+        "cycles": 366483250445,
+        "instructions": 296297868891,
+        "netflow_share_pct": 2.643702397339698,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.8221393836635426,
+        "netflow_cycles_per_packet_estimate": 507.3527042451239,
+        "system_cycles_per_packet": 19225.99689667774,
+        "netflow_cycles_per_second_estimate": 483503754.361943,
+        "module_drops_delta": 0,
+        "active_flows_before": 244365,
+        "active_flows_after": 266055,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:24:35Z",
+        "end_utc": "2026-10-25T13:24:56Z",
+        "capture_id": "before/1",
+        "accounted_packet_counter": {
+          "before": 3889520671,
+          "after": 3909733660
+        },
+        "uptime_seconds": {
+          "before": 264063.75,
+          "after": 264084.96
+        },
+        "readlock_period": 0
+      },
+      {
+        "samples": 47084,
+        "period": 369221533936,
+        "netflow_period": 10350788136,
+        "netflow_samples": 1397,
+        "netflow_self_period": 5655006070,
+        "spinlock_period": 2999482830,
+        "counter_seconds": 21.20000000001164,
+        "perf_seconds": 20.001847403,
+        "accounted_pps": 970739.575471165,
+        "cycles": 370123904184,
+        "instructions": 300699735007,
+        "netflow_share_pct": 2.8034085730747713,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.8123802525883886,
+        "netflow_cycles_per_packet_estimate": 533.0900471133615,
+        "system_cycles_per_packet": 19062.255639547744,
+        "netflow_cycles_per_second_estimate": 517491606.02272797,
+        "module_drops_delta": 0,
+        "active_flows_before": 266062,
+        "active_flows_after": 253586,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:24:56Z",
+        "end_utc": "2026-10-25T13:25:18Z",
+        "capture_id": "before/2",
+        "accounted_packet_counter": {
+          "before": 3909758150,
+          "after": 3930337829
+        },
+        "uptime_seconds": {
+          "before": 264084.99,
+          "after": 264106.19
+        },
+        "readlock_period": 0
+      },
+      {
+        "samples": 47074,
+        "period": 362401001629,
+        "netflow_period": 9899086025,
+        "netflow_samples": 1378,
+        "spinlock_period": 3088386575,
+        "netflow_self_period": 5179355418,
+        "counter_seconds": 21.210000000020955,
+        "perf_seconds": 20.002014162,
+        "accounted_pps": 957078.8778868432,
+        "cycles": 363362404909,
+        "instructions": 296464480909,
+        "netflow_share_pct": 2.7315283292549974,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.8522014456686484,
+        "netflow_cycles_per_packet_estimate": 517.0989265323947,
+        "system_cycles_per_packet": 18980.975520987377,
+        "netflow_cycles_per_second_estimate": 494904460.36211544,
+        "module_drops_delta": 0,
+        "active_flows_before": 249827,
+        "active_flows_after": 241861,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:26:15Z",
+        "end_utc": "2026-10-25T13:26:36Z",
+        "capture_id": "before-extra/1",
+        "accounted_packet_counter": {
+          "before": 3983655603,
+          "after": 4003955246
+        },
+        "uptime_seconds": {
+          "before": 264163.06,
+          "after": 264184.27
+        },
+        "readlock_period": 0
+      }
+    ],
+    "samples": 141244,
+    "netflow_share_pct": 2.7264361115956266,
+    "netflow_share_range": [
+      2.643702397339698,
+      2.8034085730747713
+    ],
+    "readlock_share_pct": 0.0,
+    "spinlock_share_pct": 0.8287832547389744,
+    "netflow_cycles_per_packet_estimate": 519.2632377252049,
+    "system_cycles_per_packet": 19089.419358613,
+    "accounted_pps": 960270.5634773172,
+    "drops": 0,
+    "lost_samples": 0
+  },
+  "after": {
+    "windows": [
+      {
+        "samples": 47063,
+        "period": 367999916097,
+        "netflow_period": 9615725107,
+        "netflow_samples": 1312,
+        "spinlock_period": 3328842779,
+        "netflow_self_period": 4906732621,
+        "counter_seconds": 21.220000000030268,
+        "perf_seconds": 20.00190841,
+        "accounted_pps": 934768.7558893359,
+        "cycles": 368698987416,
+        "instructions": 295867943606,
+        "netflow_share_pct": 2.612969374826004,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.9045770483606742,
+        "netflow_cycles_per_packet_estimate": 514.288030952556,
+        "system_cycles_per_packet": 19719.519239827194,
+        "netflow_cycles_per_second_estimate": 480740382.8622971,
+        "module_drops_delta": 0,
+        "active_flows_before": 233184,
+        "active_flows_after": 253875,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:30:04Z",
+        "end_utc": "2026-10-25T13:30:25Z",
+        "capture_id": "after/1",
+        "accounted_packet_counter": {
+          "before": 161529959,
+          "after": 181365752
+        },
+        "uptime_seconds": {
+          "before": 264392.18,
+          "after": 264413.4
+        },
+        "readlock_period": 0
+      },
+      {
+        "samples": 47078,
+        "period": 364167967833,
+        "netflow_period": 9704338728,
+        "netflow_samples": 1360,
+        "spinlock_period": 3146754464,
+        "netflow_self_period": 4878283672,
+        "counter_seconds": 21.220000000030268,
+        "perf_seconds": 20.00184734,
+        "accounted_pps": 931690.6220533365,
+        "cycles": 364903975050,
+        "instructions": 294757014738,
+        "netflow_share_pct": 2.6647974520510855,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.8640942482461932,
+        "netflow_cycles_per_packet_estimate": 520.7438081079943,
+        "system_cycles_per_packet": 19581.085418320275,
+        "netflow_cycles_per_second_estimate": 485172122.5065604,
+        "module_drops_delta": 0,
+        "active_flows_before": 254004,
+        "active_flows_after": 216950,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:30:25Z",
+        "end_utc": "2026-10-25T13:30:46Z",
+        "capture_id": "after/2",
+        "accounted_packet_counter": {
+          "before": 181386672,
+          "after": 201157147
+        },
+        "uptime_seconds": {
+          "before": 264413.42,
+          "after": 264434.64
+        },
+        "readlock_period": 0
+      },
+      {
+        "samples": 47092,
+        "period": 364477538023,
+        "netflow_period": 9760648468,
+        "netflow_samples": 1341,
+        "spinlock_period": 3167730072,
+        "netflow_self_period": 4731301589,
+        "counter_seconds": 21.220000000030268,
+        "perf_seconds": 20.001922475,
+        "accounted_pps": 948260.5089524646,
+        "cycles": 365448966842,
+        "instructions": 297773694207,
+        "netflow_share_pct": 2.6779835380099786,
+        "readlock_share_pct": 0.0,
+        "spinlock_share_pct": 0.8691153065789485,
+        "netflow_cycles_per_packet_estimate": 514.6112400497319,
+        "system_cycles_per_packet": 19267.587252836507,
+        "netflow_cycles_per_second_estimate": 487985516.40221775,
+        "module_drops_delta": 0,
+        "active_flows_before": 216925,
+        "active_flows_after": 220548,
+        "lost_samples": 0,
+        "start_utc": "2026-10-25T13:30:46Z",
+        "end_utc": "2026-10-25T13:31:07Z",
+        "capture_id": "after/3",
+        "accounted_packet_counter": {
+          "before": 201180382,
+          "after": 221302470
+        },
+        "uptime_seconds": {
+          "before": 264434.66,
+          "after": 264455.88
+        },
+        "readlock_period": 0
+      }
+    ],
+    "samples": 141233,
+    "netflow_share_pct": 2.6517880548127013,
+    "netflow_share_range": [
+      2.612969374826004,
+      2.6779835380099786
+    ],
+    "readlock_share_pct": 0.0,
+    "spinlock_share_pct": 0.8793477930018928,
+    "netflow_cycles_per_packet_estimate": 516.5338175504683,
+    "system_cycles_per_packet": 19521.443725885085,
+    "accounted_pps": 938239.9713126458,
+    "drops": 0,
+    "lost_samples": 0
+  },
+  "baseline": "c6011d8 (DE3FFFE12E6822AD988F95C)",
+  "candidate": "7c37663 (2B5F218F331B46A3A113269)",
+  "excluded_window": "before/3 overlapped the separately timed hashsize operations; replaced with before-extra/1",
+  "netflow_cycles_per_packet_estimate_change_pct": -0.5256332388739349,
+  "system_cycles_per_packet_change_pct": 2.263161383571166,
+  "accounted_pps_change_pct": -2.2942067582384817,
+  "hashsize_bench": {
+    "before": {
+      "empty": {
+        "median_wall_ms": 50.484476,
+        "median_cpu_ms": 50.478937
+      },
+      "noop": {
+        "median_wall_ms": 55.865141,
+        "median_cpu_ms": 55.797102
+      },
+      "resize": {
+        "median_wall_ms": 99.107467,
+        "median_cpu_ms": 99.097408
+      },
+      "samples": [
+        {
+          "operation": "empty",
+          "iteration": 1,
+          "wall_ms": 52.202075,
+          "cpu_ms": 52.113097
+        },
+        {
+          "operation": "empty",
+          "iteration": 2,
+          "wall_ms": 50.484476,
+          "cpu_ms": 50.478937
+        },
+        {
+          "operation": "empty",
+          "iteration": 3,
+          "wall_ms": 49.232298,
+          "cpu_ms": 49.226907
+        },
+        {
+          "operation": "noop",
+          "iteration": 1,
+          "wall_ms": 64.549667,
+          "cpu_ms": 64.513098
+        },
+        {
+          "operation": "noop",
+          "iteration": 2,
+          "wall_ms": 55.865141,
+          "cpu_ms": 55.797102
+        },
+        {
+          "operation": "noop",
+          "iteration": 3,
+          "wall_ms": 54.532156,
+          "cpu_ms": 54.526329
+        },
+        {
+          "operation": "resize",
+          "iteration": 1,
+          "wall_ms": 107.524878,
+          "cpu_ms": 107.513035
+        },
+        {
+          "operation": "resize",
+          "iteration": 2,
+          "wall_ms": 99.107467,
+          "cpu_ms": 99.097408
+        },
+        {
+          "operation": "resize",
+          "iteration": 3,
+          "wall_ms": 98.588026,
+          "cpu_ms": 98.571029
+        }
+      ]
+    },
+    "after": {
+      "empty": {
+        "median_wall_ms": 0.002147,
+        "median_cpu_ms": 0.001875
+      },
+      "noop": {
+        "median_wall_ms": 0.002073,
+        "median_cpu_ms": 0.001821
+      },
+      "resize": {
+        "median_wall_ms": 87.02612,
+        "median_cpu_ms": 87.017918
+      },
+      "samples": [
+        {
+          "operation": "empty",
+          "iteration": 1,
+          "wall_ms": 0.005635,
+          "cpu_ms": 0.004237
+        },
+        {
+          "operation": "empty",
+          "iteration": 2,
+          "wall_ms": 0.002147,
+          "cpu_ms": 0.001875
+        },
+        {
+          "operation": "empty",
+          "iteration": 3,
+          "wall_ms": 0.001587,
+          "cpu_ms": 0.001347
+        },
+        {
+          "operation": "noop",
+          "iteration": 1,
+          "wall_ms": 0.007673,
+          "cpu_ms": 0.006623
+        },
+        {
+          "operation": "noop",
+          "iteration": 2,
+          "wall_ms": 0.002073,
+          "cpu_ms": 0.001821
+        },
+        {
+          "operation": "noop",
+          "iteration": 3,
+          "wall_ms": 0.001759,
+          "cpu_ms": 0.001508
+        },
+        {
+          "operation": "resize",
+          "iteration": 1,
+          "wall_ms": 89.694824,
+          "cpu_ms": 89.685779
+        },
+        {
+          "operation": "resize",
+          "iteration": 2,
+          "wall_ms": 86.611765,
+          "cpu_ms": 86.596851
+        },
+        {
+          "operation": "resize",
+          "iteration": 3,
+          "wall_ms": 87.02612,
+          "cpu_ms": 87.017918
+        }
+      ]
+    }
+  },
+  "limitations": "Three low-frequency live-traffic snapshots per module; sampled cycle attribution and workload variation limit causal/precision claims. Resize values are a small increase followed by restoration, and timings cover each pair.",
+  "hashsize_bench_endpoint_mean_active_flows": {
+    "before": 247348.0,
+    "after": 239033.0
+  },
+  "hashsize_resize_pair_wall_change_pct": -12.190148094492203,
+  "hashsize_bench_note": "Three iterations per operation. Active-flow counts vary under live traffic; whole resize-pair times are observations, not a controlled isolated hash benchmark.",
+  "deployment": {
+    "host": "th-pppoe25",
+    "kernel": "7.2.11-build-0140",
+    "commit": "7c37663",
+    "version": "2.8.0-41-g7c37663",
+    "srcversion": "2B5F218F331B46A3A113269",
+    "module_sha256": "1c116d3d0000a7b145d35dab698e8739f52c89992c251780b68cde4ca5dfaf49",
+    "runtime_only": true,
+    "accounting_pause_seconds": 0.24,
+    "parameters_and_forward_rules_preserved": true,
+    "hashsize_restored": 655360,
+    "kernel_taint_unchanged": true
+  },
+  "benchmark_date": "2026-10-25",
+  "hardware": {
+    "architecture": "x86_64",
+    "online_cpus": 48,
+    "cpu": "Intel Xeon Gold 5118 @ 2.30 GHz"
+  },
+  "method": {
+    "event": "cycles",
+    "frequency_hz": 49,
+    "record_seconds_per_window": 20,
+    "windows_per_version": 3,
+    "scope": "system-wide",
+    "call_graph": "frame-pointer",
+    "hashsize_before_and_after": 655360,
+    "resize_pair_sizes": [
+      655360,
+      655616,
+      655360
+    ],
+    "timing_iterations_per_operation": 3,
+    "timing_clocks": [
+      "CLOCK_MONOTONIC",
+      "CLOCK_PROCESS_CPUTIME_ID"
+    ],
+    "flow_size_bytes": 160,
+    "aggregation_enabled": false,
+    "perf_stat_events": [
+      "cycles",
+      "instructions",
+      "context-switches",
+      "cpu-migrations",
+      "page-faults"
+    ]
+  },
+  "commits": {
+    "baseline": "c6011d8a66e163fa55977d166faca2752e019a31",
+    "candidate": "7c3766324df0351f448351f8569afbb0dc411881"
+  },
+  "validation": {
+    "local_checks": [
+      "test_packets.py",
+      "test_aggregation.py (modern and legacy RCU-sched branches)",
+      "test_hashtable.py (normal and hash sampling)",
+      "test_exports.py",
+      "test_registration.py"
+    ],
+    "sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "production_kernel_module_build": "PASS",
+    "vm_test": "PASS: netflow-accounting; exact production kernel, production candidate binary; NetFlow v9/IPFIX, conntrack-event and iptables modes, hashsize writes/resize, exported packet/byte counts and module unloading",
+    "vm_seconds": 12.7,
+    "live_final_settings_and_forward_rules": "unchanged",
+    "live_table_size": 655360,
+    "live_reported_packet_drops": 0,
+    "live_reported_export_loss": 0,
+    "new_kernel_warnings": false
+  },
+  "normalization": {
+    "packet_rate": "(after accounted packets - before accounted packets) / (after uptime - before uptime)",
+    "netflow_cycles_per_packet": "sum(sample periods in callchains containing netflow_target) / (packet rate * perf elapsed seconds)",
+    "system_cycles_per_packet": "perf stat cycles / (packet rate * perf elapsed seconds)",
+    "aggregate": "sum cycle estimates / sum(packet rate * perf elapsed seconds) across the three windows",
+    "assumption": "Average packet rate across the approximately 21.2-second counter interval represents the 20-second perf window; live traffic, flow mix and CPU activity are uncontrolled."
+  }
+}
