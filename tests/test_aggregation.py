@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parents[1]
 workspace = tempfile.TemporaryDirectory(prefix='ipt-netflow-test-')
 out = Path(workspace.name)
 src = (root / 'ipt_NETFLOW.c').read_text()
-start = src.index('static void aggregation_remove(struct list_head *list)\n{')
+start = src.index('static void aggregation_free(struct aggregation_rules *rules)\n{')
 body = src[start:src.index('\n#endif', start)]
 start = src.index('static int aggregation_procctl(')
 handler = src[start:src.index('\n#endif', start)]
@@ -33,6 +33,7 @@ struct list_head { struct list_head *next,*prev; };
 #define list_entry(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 #define list_empty(h) ((h)->next==(h))
 #define list_for_each_entry(p,h,m) for(p=list_entry((h)->next,__typeof__(*p),m); &p->m!=(h);p=list_entry(p->m.next,__typeof__(*p),m))
+#define list_for_each_entry_safe(p,n,h,m) for(p=list_entry((h)->next,__typeof__(*p),m),n=list_entry(p->m.next,__typeof__(*p),m); &p->m!=(h);p=n,n=list_entry(n->m.next,__typeof__(*n),m))
 static void list_del(struct list_head *n) { n->prev->next=n->next; n->next->prev=n->prev; }
 static void list_add_tail(struct list_head *n,struct list_head *h) { n->prev=h->prev;n->next=h;h->prev->next=n;h->prev=n; }
 struct netflow_aggr_n {struct list_head list;atomic_uint usage;uint32_t mask,addr,aggr_mask;uint8_t prefix;};

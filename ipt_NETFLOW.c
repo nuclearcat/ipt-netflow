@@ -2433,23 +2433,21 @@ static int add_destinations(const char *ptr)
 }
 
 #ifdef ENABLE_AGGR
-static void aggregation_remove(struct list_head *list)
-{
-	while (!list_empty(list)) {
-		struct netflow_aggr_n *aggr; /* match netflow_aggr_p too */
-
-		aggr = list_entry(list->next, struct netflow_aggr_n, list);
-		list_del(&aggr->list);
-		vfree(aggr);
-	}
-}
-
 static void aggregation_free(struct aggregation_rules *rules)
 {
+	struct netflow_aggr_n *net, *net_tmp;
+	struct netflow_aggr_p *port, *port_tmp;
+
 	if (!rules)
 		return;
-	aggregation_remove(&rules->nets);
-	aggregation_remove(&rules->ports);
+	list_for_each_entry_safe(net, net_tmp, &rules->nets, list) {
+		list_del(&net->list);
+		vfree(net);
+	}
+	list_for_each_entry_safe(port, port_tmp, &rules->ports, list) {
+		list_del(&port->list);
+		vfree(port);
+	}
 	kfree(rules);
 }
 
