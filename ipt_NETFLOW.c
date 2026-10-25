@@ -1592,13 +1592,29 @@ static int aggregation_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
 {
 	int ret;
+	ctl_table_no_const lctl = *ctl;
+	char *new_buf = NULL;
 
 	if (debug > 1)
 		printk(KERN_INFO "aggregation_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
 	mutex_lock(&aggr_config_lock);
-	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
-	if (ret >= 0 && write)
-		ret = add_aggregation(aggregation_buf);
+	if (write) {
+		new_buf = kmalloc(sizeof(aggregation_buf), GFP_KERNEL);
+		if (!new_buf) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		memcpy(new_buf, aggregation_buf, sizeof(aggregation_buf));
+		lctl.data = new_buf;
+	}
+	ret = proc_dostring(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
+	if (ret >= 0 && write) {
+		ret = add_aggregation(new_buf);
+		if (!ret)
+			memcpy(aggregation_buf, new_buf, sizeof(aggregation_buf));
+	}
+	kfree(new_buf);
+out:
 	mutex_unlock(&aggr_config_lock);
 	return ret;
 }

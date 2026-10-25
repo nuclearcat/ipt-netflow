@@ -11,6 +11,8 @@ out = Path(workspace.name)
 src = (root / 'ipt_NETFLOW.c').read_text()
 start = src.index('static void aggregation_remove(struct list_head *list)\n{')
 body = src[start:src.index('\n#endif', start)]
+start = src.index('static int aggregation_procctl(')
+handler = src[start:src.index('\n#endif', start)]
 start = src.index('\t/* aggregate networks */', src.index('static unsigned int netflow_target('))
 packet = src[start:src.index('\n#endif', start)]
 prefix = r'''
@@ -38,6 +40,7 @@ struct netflow_aggr_p {struct list_head list;atomic_uint usage;uint16_t port1,po
 struct aggregation_rules {struct list_head nets,ports;};
 static _Atomic(struct aggregation_rules *) aggr_ruleset;
 static pthread_mutex_t aggr_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t aggr_config_lock=PTHREAD_MUTEX_INITIALIZER;
 #define mutex_lock(x) assert(!pthread_mutex_lock(x))
 #define mutex_unlock(x) assert(!pthread_mutex_unlock(x))
 /* Model the grace-period lifetime contract, not the kernel RCU implementation. */
@@ -56,7 +59,28 @@ static void synchronize_rcu(void) { assert(!pthread_rwlock_wrlock(&readers));ass
 #define SEPARATORS ",; \t\n"
 static atomic_int live,attempt,fail_at;
 static void *vmalloc(size_t n) {if(++attempt==fail_at) return NULL;void *p=malloc(n);if(p)live++;return p;}
-static void vfree(void *p) {live--;free(p);}
+static void vfree(void *p) {if(p){live--;free(p);}}
+#define GFP_KERNEL 0
+#define kmalloc(n,f) vmalloc(n)
+#define kfree(p) vfree(p)
+typedef struct ctl_table {void *data;size_t maxlen;} ctl_table_no_const;
+#define PROC_CTL_TABLE struct ctl_table
+#define BEFORE2632(a,b)
+#define __user
+static char aggregation_buf[1024];
+static int debug,string_error;
+static int proc_dostring(struct ctl_table *ctl,int write,void *buf,size_t *len,loff_t *pos) {
+ if(string_error)return string_error;
+ if(write) {
+  size_t n=strcspn(buf,"\n");if(n>*len)n=*len;
+  if(n>=ctl->maxlen)n=ctl->maxlen-1;
+  memcpy(ctl->data,buf,n);((char *)ctl->data)[n]=0;
+ } else {
+  size_t n=strlen(ctl->data);if(n>*len)n=*len;
+  memcpy(buf,ctl->data,n);*len=n;
+ }
+ *pos+=*len;return 0;
+}
 static __be32 bits2mask(int bits) {return bits?0xffffffffU<<(32-bits):0;}
 '''
 apply = r'''
@@ -75,6 +99,17 @@ apply_end = r'''
 }
 '''
 suffix = r'''
+static int sysctl_write(char *text) {
+ struct ctl_table ctl={aggregation_buf,sizeof(aggregation_buf)};
+ size_t len=strlen(text);loff_t pos=0;
+ return aggregation_procctl(&ctl,1,text,&len,&pos);
+}
+static void check_readback(const char *expected) {
+ struct ctl_table ctl={aggregation_buf,sizeof(aggregation_buf)};
+ char buf[1024]={0};size_t len=sizeof(buf)-1;loff_t pos=0;
+ assert(!aggregation_procctl(&ctl,0,buf,&len,&pos));
+ assert(!strcmp(buf,expected));
+}
 static atomic_int stop,observations;
 static void check_snapshot(struct result r) {
  assert(r.smask==8 && r.dmask==8);
@@ -107,6 +142,19 @@ int main(void) {
   assert(rcu_dereference(aggr_ruleset)==initial);
  }
  fail_at=0;
+ strcpy(aggregation_buf,good);
+ char invalid[]="10.0.0.0/33=8";
+ assert(sysctl_write(invalid)==-EINVAL);
+ check_readback(good);assert(rcu_dereference(aggr_ruleset)==initial && live==4);
+ /* Fail the scratch buffer, container and each rule allocation separately. */
+ for(int failure=1;failure<=5;failure++) {
+  attempt=0;fail_at=failure;
+  assert(sysctl_write(good)==-ENOMEM);
+  check_readback(good);assert(rcu_dereference(aggr_ruleset)==initial && live==4);
+ }
+ fail_at=0;string_error=-EFAULT;
+ assert(sysctl_write(good)==-EFAULT && live==4);
+ string_error=0;check_readback(good);
  char partial_bad[]="1.0.0.0/8=16,80=70000";
  assert(add_aggregation(partial_bad)==-EINVAL && live==4);
  check_snapshot(apply(AF_INET,IPPROTO_TCP));
@@ -136,7 +184,7 @@ int main(void) {
  for(int i=0;i<4;i++) assert(!pthread_join(threads[i],NULL));
  assert(observations>0 && live==4);
  char empty[]="";
- assert(add_aggregation(empty)==0 && live==1);
+ assert(sysctl_write(empty)==0 && live==1);check_readback(empty);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81 && r.dport==3128);
  aggregation_replace(NULL);
@@ -146,7 +194,7 @@ int main(void) {
  puts("aggregation validation, rollback, packet semantics and concurrent RCU replacement checks passed");
 }
 '''
-(out / 'aggregation.c').write_text(prefix + body + apply + packet + apply_end + suffix)
+(out / 'aggregation.c').write_text(prefix + body + handler + apply + packet + apply_end + suffix)
 subprocess.run(['gcc', '-g', '-O1', '-pthread', '-fsanitize=address,undefined',
                 str(out / 'aggregation.c'), '-o', str(out / 'aggregation')], check=True)
 subprocess.run([str(out / 'aggregation')], check=True, timeout=60,
