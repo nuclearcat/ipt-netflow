@@ -1521,6 +1521,8 @@ static int hsize_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file 
 	int ret, hsize = htable_size;
 	ctl_table_no_const lctl = *ctl;
 
+	if (write && !*lenp)
+		return 0;
 	if (write)
 		lctl.data = &hsize;
 	ret = proc_dointvec(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
@@ -2606,6 +2608,10 @@ static int set_hashsize(int new_size)
 	if (new_size < LOCK_COUNT)
 		new_size = LOCK_COUNT;
 	mutex_lock(&htable_mutex);
+	if (new_size == htable_size) {
+		mutex_unlock(&htable_mutex);
+		return 0;
+	}
 	new_hash = alloc_hashtable(new_size);
 	if (!new_hash) {
 		mutex_unlock(&htable_mutex);

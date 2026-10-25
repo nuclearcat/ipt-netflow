@@ -48,8 +48,9 @@ typedef struct ctl_table {void *data;} ctl_table_no_const;
 #define PROC_CTL_TABLE struct ctl_table
 #define BEFORE2632(a,b)
 #define __user
-static int parse_error,requested_size;
+static int parse_error,requested_size,proc_calls;
 static int proc_dointvec(struct ctl_table *ctl,int write,void *buf,size_t *len,loff_t *pos) {
+ proc_calls++;
  if(parse_error)return parse_error;
  if(write && *len) *(int *)ctl->data=requested_size;
  return 0;
@@ -230,6 +231,13 @@ end = r'''
  assert(hsize_procctl(&ctl,1,NULL,&len,&pos)==-EPERM && htable==old);
  requested_size=257;
  assert(!hsize_procctl(&ctl,0,NULL,&len,&pos) && htable==old);
+ /* Neither no-op path may allocate, even under allocation pressure. */
+ fail_alloc=1;requested_size=htable_size;
+ assert(!hsize_procctl(&ctl,1,NULL,&len,&pos) && htable==old && fail_alloc==1);
+ assert(!set_hashsize(htable_size) && htable==old && fail_alloc==1);
+ int calls=proc_calls;len=0;requested_size=65537;
+ assert(!hsize_procctl(&ctl,1,NULL,&len,&pos) && htable==old && fail_alloc==1);
+ assert(proc_calls==calls);len=1;
  fail_alloc=1;
  assert(set_hashsize(1024)==-ENOMEM && htable==old && htable_size==oldsize);
  verify();
