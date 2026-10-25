@@ -2450,7 +2450,7 @@ static void aggregation_free(struct aggregation_rules *rules)
 		return;
 	aggregation_remove(&rules->nets);
 	aggregation_remove(&rules->ports);
-	vfree(rules);
+	kfree(rules);
 }
 
 static void aggregation_replace(struct aggregation_rules *rules)
@@ -2472,7 +2472,7 @@ static int add_aggregation(char *ptr)
 	struct netflow_aggr_p *aggr_p;
 	int ret = -EINVAL;
 
-	rules = vmalloc(sizeof(*rules));
+	rules = kzalloc(sizeof(*rules), GFP_KERNEL);
 	if (!rules)
 		return -ENOMEM;
 	INIT_LIST_HEAD(&rules->nets);

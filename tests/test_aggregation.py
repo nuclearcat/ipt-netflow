@@ -58,12 +58,25 @@ static void synchronize_rcu(void) { assert(!pthread_rwlock_wrlock(&readers));ass
 #define KERN_INFO ""
 #define printk(...) ((void)0)
 #define SEPARATORS ",; \t\n"
-static atomic_int live,attempt,fail_at;
-static void *vmalloc(size_t n) {if(++attempt==fail_at) return NULL;void *p=malloc(n);if(p)live++;return p;}
-static void vfree(void *p) {if(p){live--;free(p);}}
+static atomic_int live,heap_live,vm_live,attempt,fail_at;
+struct allocation {max_align_t align;int vm;};
+static void *test_alloc(size_t n,int vm,int zero) {
+ if(++attempt==fail_at)return NULL;
+ struct allocation *a=malloc(sizeof(*a)+n);if(!a)return NULL;
+ a->vm=vm;live++;if(vm)vm_live++;else heap_live++;
+ void *p=a+1;if(zero)memset(p,0,n);return p;
+}
+static void test_free(void *p,int vm) {
+ if(!p)return;
+ struct allocation *a=(struct allocation *)p-1;assert(a->vm==vm);
+ live--;if(vm)vm_live--;else heap_live--;free(a);
+}
+static void *vmalloc(size_t n) {return test_alloc(n,1,0);}
+static void vfree(void *p) {test_free(p,1);}
 #define GFP_KERNEL 0
-#define kmalloc(n,f) vmalloc(n)
-#define kfree(p) vfree(p)
+#define kmalloc(n,f) test_alloc(n,0,0)
+#define kzalloc(n,f) test_alloc(n,0,1)
+#define kfree(p) test_free(p,0)
 typedef struct ctl_table {void *data;size_t maxlen;} ctl_table_no_const;
 #define PROC_CTL_TABLE struct ctl_table
 #define BEFORE2632(a,b)
@@ -135,6 +148,7 @@ static void *replacement(void *unused) {
 int main(void) {
  char good[]="10.0.0.0/8=16,80-89=80,3128=80,";
  assert(set_aggregation(good)==0 && live==4);
+ assert(heap_live==1 && vm_live==3);
  struct aggregation_rules *initial=rcu_dereference(aggr_ruleset);
  struct netflow_aggr_p *last=list_entry(initial->ports.prev,struct netflow_aggr_p,list);
  assert(last->port1==3128 && last->port2==3128 && last->aggr_port==80);
@@ -195,7 +209,7 @@ int main(void) {
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81 && r.dport==3128);
  mutex_lock(&aggr_config_lock);aggregation_replace(NULL);mutex_unlock(&aggr_config_lock);
- assert(!rcu_dereference(aggr_ruleset) && live==0);
+ assert(!rcu_dereference(aggr_ruleset) && live==0 && !heap_live && !vm_live);
  r=apply(AF_INET,IPPROTO_TCP);
  assert(r.src==0x0a010203 && r.sport==81);
  puts("aggregation validation, rollback, packet semantics and concurrent RCU replacement checks passed");
