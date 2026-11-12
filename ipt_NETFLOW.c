@@ -1516,6 +1516,9 @@ unlock:
 #endif
 
 #ifdef CONFIG_SYSCTL
+/* Serialize string sysctl access, including parsing and canonicalization. */
+static DEFINE_MUTEX(string_config_lock);
+
 /* sysctl /proc/sys/net/netflow */
 static int hsize_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file *filp,)
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
@@ -1574,20 +1577,28 @@ static int destination_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
 {
 	int ret;
+	char new_buf[sizeof(destination_buf)];
+	ctl_table_no_const lctl = *ctl;
 
 	if (write && *lenp >= sizeof(destination_buf)) {
 		printk(KERN_WARNING "ipt_NETFLOW: destination string too long (max %zu)\n",
 		       sizeof(destination_buf) - 1);
 		return -E2BIG;
 	}
-	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
+	mutex_lock(&string_config_lock);
+	memcpy(new_buf, destination_buf, sizeof(new_buf));
+	lctl.data = new_buf;
+	ret = proc_dostring(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write) {
 		pause_scan_worker();
 		destination_removeall();
-		add_destinations(destination_buf);
+		ret = add_destinations(new_buf);
+		if (!ret)
+			memcpy(destination_buf, new_buf, sizeof(destination_buf));
 		free_templates();
 		cont_scan_worker();
 	}
+	mutex_unlock(&string_config_lock);
 	return ret;
 }
 
@@ -1646,17 +1657,22 @@ static int sampler_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct fil
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
 {
 	int ret;
+	char new_buf[sizeof(sampler_buf)];
+	ctl_table_no_const lctl = *ctl;
 
 	if (debug > 1)
 		printk(KERN_INFO "sampler_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
-	ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
+	mutex_lock(&string_config_lock);
+	memcpy(new_buf, sampler_buf, sizeof(new_buf));
+	lctl.data = new_buf;
+	ret = proc_dostring(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write) {
 		int cpu;
 
 		pause_scan_worker();
 		netflow_scan_and_export(AND_FLUSH);
 		/* paused for sampling_code reads to be consistent */
-		ret = parse_sampler(sampler_buf);
+		ret = parse_sampler(new_buf);
 		/* resend templates */
 		ts_sampler_last = 0;
 		/* zero stat */
@@ -1669,6 +1685,7 @@ static int sampler_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct fil
 		}
 		cont_scan_worker();
 	}
+	mutex_unlock(&string_config_lock);
 	return ret;
 }
 #endif
@@ -1678,15 +1695,25 @@ static int add_snmp_rules(char *ptr);
 static int snmp_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct file *filp,)
 			 void __user *buffer, size_t *lenp, loff_t *fpos)
 {
-       int ret;
+	int ret;
+	char new_buf[sizeof(snmp_rules_buf)];
+	ctl_table_no_const lctl = *ctl;
 
-       if (debug > 1)
-	       printk(KERN_INFO "snmp_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
-       ret = proc_dostring(ctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
-       if (ret >= 0 && write)
-               return add_snmp_rules(snmp_rules_buf);
-       return ret;
+	if (debug > 1)
+		printk(KERN_INFO "snmp_procctl (%d) %u %llu\n", write, (unsigned int)(*lenp), *fpos);
+	mutex_lock(&string_config_lock);
+	memcpy(new_buf, snmp_rules_buf, sizeof(new_buf));
+	lctl.data = new_buf;
+	ret = proc_dostring(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
+	if (ret >= 0 && write) {
+		ret = add_snmp_rules(new_buf);
+		if (!ret)
+			memcpy(snmp_rules_buf, new_buf, sizeof(snmp_rules_buf));
+	}
+	mutex_unlock(&string_config_lock);
+	return ret;
 }
+
 #endif
 
 static void clear_ipt_netflow_stat(void)
@@ -2295,12 +2322,10 @@ static int add_snmp_rules(char *ptr)
 
 	if (osize <= 0) {
 		printk(KERN_ERR "ipt_NETFLOW: add_snmp_rules parse error.\n");
-		strcpy(snmp_rules_buf, "parse error");
 		return -EINVAL;
 	}
 	dst = kmalloc(osize, GFP_KERNEL);
 	if (!dst) {
-		strcpy(snmp_rules_buf, "no memory");
 		printk(KERN_ERR "ipt_NETFLOW: add_snmp_rules no memory.\n");
 		return -ENOMEM;
 	}
