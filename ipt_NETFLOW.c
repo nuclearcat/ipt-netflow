@@ -2007,6 +2007,10 @@ static struct socket *usock_open_sock(struct ipt_netflow_sock *usock)
 
 			/* SO_BINDTOIFINDEX */
 			sk->sk_bound_dev_if = dev->ifindex;
+			if (usock->addr.ss_family == AF_INET6)
+				((struct sockaddr_in6 *)&usock->addr)->sin6_scope_id = dev->ifindex;
+			if (usock->saddr.ss_family == AF_INET6)
+				((struct sockaddr_in6 *)&usock->saddr)->sin6_scope_id = dev->ifindex;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36)
 			if (sk->sk_prot->rehash)
 				sk->sk_prot->rehash(sk);
@@ -2181,7 +2185,10 @@ static void add_usock(struct ipt_netflow_sock *usock)
 	mutex_lock(&sock_lock);
 	/* don't need duplicated sockets */
 	list_for_each_entry(sk, &usock_list, list) {
-		if (sockaddr_cmp(&sk->addr, &usock->addr)) {
+		if (sockaddr_cmp(&sk->addr, &usock->addr) &&
+		    ((is_zero_addr(&sk->saddr) && is_zero_addr(&usock->saddr)) ||
+		     sockaddr_cmp(&sk->saddr, &usock->saddr)) &&
+		    !strcmp(sk->sdev, usock->sdev)) {
 			mutex_unlock(&sock_lock);
 			usock_close_free(usock);
 			return;

@@ -3,6 +3,7 @@
 """Exercise destination parsing, rollback, and allocation failures."""
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 
@@ -13,6 +14,10 @@ start = compat.index('#define hex_to_bin compat_hex_to_bin')
 inet = compat[start:compat.index('#endif /* IN6PTON_XDIGIT */', start)]
 start = source.index('static size_t strncount(')
 parser = source[start:source.index('\n#ifdef ENABLE_AGGR', start)]
+def function(name, text=source):
+    return re.search(r'^static[^\n]*\b' + name + r'\([^;]*?\n\{.*?^\}', text, re.M | re.S).group()
+comparators = compat[compat.index('static int sockaddr_match_ipaddr6('):compat.index('\n#ifndef IN6PTON_XDIGIT')]
+
 code = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -35,7 +40,7 @@ struct list_head {struct list_head *next,*prev;};
 #define list_first_entry(h,t,m) list_entry((h)->next,t,m)
 static void list_del(struct list_head *n) {n->prev->next=n->next;n->next->prev=n->prev;}
 static void list_add_tail(struct list_head *n,struct list_head *h) {n->next=h;n->prev=h->prev;h->prev->next=n;h->prev=n;}
-struct ipt_netflow_sock {struct list_head list;struct sockaddr_storage addr,saddr;char sdev[IFNAMSIZ];};
+struct ipt_netflow_sock {void *sock;struct list_head list;struct sockaddr_storage addr,saddr;char sdev[IFNAMSIZ];};
 static LIST_HEAD(usock_list);
 static int allocated,fail_at,attempts,connects;
 static void *vmalloc(size_t size) {if(++attempts==fail_at)return NULL;allocated++;return malloc(size);}
@@ -47,9 +52,15 @@ static void destination_removeall(void) {
  }
 }
 static void usock_connect(struct ipt_netflow_sock *s,int send) {connects++;}
-static void add_usock(struct ipt_netflow_sock *s) {list_add_tail(&s->list,&usock_list);}
+#define ipv6_addr_equal(a,b) (!memcmp(a,b,sizeof(*(a))))
+#define mutex_lock(p) ((void)0)
+#define mutex_unlock(p) ((void)0)
+#define list_for_each_entry(p,h,m) for(p=list_entry((h)->next,__typeof__(*p),m);&p->m!=(h);p=list_entry(p->m.next,__typeof__(*p),m))
+#define KERN_INFO ""
+static void usock_close_free(struct ipt_netflow_sock *s) {vfree(s);}
+
 '''
-code += inet + parser + r'''
+code += comparators + function('is_zero_addr') + function('add_usock') + '\n' + inet + parser + r'''
 int main(void) {
  const char *valid[]={"127.0.0.1","127.0.0.1:1","127.0.0.1:65535",
   "127.0.0.1:0x807@127.0.0.2%eth0","[2001:db8::1]:2055","2001:db8::1p2055",
@@ -76,6 +87,9 @@ int main(void) {
   assert(allocated==1 && usock_list.next==old && connects==n);
  }
  fail_at=0;assert(!add_destinations("127.0.0.2; [::1]:2055\t127.0.0.3"));assert(allocated==3);
+ assert(!add_destinations("[fe80::1]:2055%eth0,[fe80::1]:2055%eth1,[fe80::1]:2055%eth0"));assert(allocated==2);
+ assert(!add_destinations("127.0.0.1@127.0.0.2,127.0.0.1@127.0.0.3,127.0.0.1@127.0.0.2"));assert(allocated==2);
+ assert(!add_destinations("127.0.0.1,127.0.0.1@0.0.0.0"));assert(allocated==1);
  assert(!add_destinations(""));assert(!allocated && list_empty(&usock_list));
  puts("destination validation and rollback checks passed");
 }
