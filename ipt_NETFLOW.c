@@ -994,7 +994,7 @@ static inline int active_needs_export(const struct ipt_netflow *nf, const long a
     const unsigned long jiff);
 
 struct flows_dump_private {
-	int pcache;	/* pos */
+	loff_t pcache;	/* pos */
 	void *vcache;	/* corresponding pointer for pos */
 	int stripe;	/* current stripe */
 	unsigned int hash_size, hash_offset; /* captured with the copied stripe */
@@ -1047,7 +1047,9 @@ static struct list_head *nf_get_stripe(struct flows_dump_private *st, int nstrip
 			st->hash_offset = stripe->offset;
 			__nf_copy_stripe(st, &stripe->list);
 			spin_unlock_bh(&stripe->lock);
-			return st->list.next;
+			if (!list_empty(&st->list))
+				return st->list.next;
+			continue;
 		}
 		spin_unlock_bh(&stripe->lock);
 	}
@@ -1060,7 +1062,7 @@ static struct list_head *nf_get_next(struct flows_dump_private *st, struct list_
 {
 	if (head == SEQ_START_TOKEN)
 		return nf_get_stripe(st, 0);
-	if (st->stripe < 0)
+	if (!head || st->stripe < 0)
 		return NULL;
 	/* next element */
 	if (!list_is_last(head, &st->list))
@@ -1074,7 +1076,7 @@ static struct list_head *nf_get_next(struct flows_dump_private *st, struct list_
 static void *flows_dump_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct flows_dump_private *st = seq->private;
-	int ppos = *pos;
+	loff_t ppos = *pos;
 	struct list_head *lh;
 
 	if (!ppos) {
@@ -1090,7 +1092,7 @@ static void *flows_dump_seq_start(struct seq_file *seq, loff_t *pos)
 	} else /* can't, start from 0 */
 		lh = SEQ_START_TOKEN;
 	/* iterate forward */
-	while (ppos--)
+	while (ppos-- && lh)
 		lh = nf_get_next(st, lh);
 	st->pcache = *pos;
 	st->vcache = lh;
@@ -1139,7 +1141,7 @@ static int flows_dump_seq_show(struct seq_file *seq, void *v)
 	}
 
 	nf = list_entry(v, struct ipt_netflow, flows_list);
-	seq_printf(seq, "%d %04x %x",
+	seq_printf(seq, "%lld %04x %x",
 	    st->pcache,
 	    st->hash_offset + (nf->hash / LOCK_COUNT) % st->hash_size,
 	    (!!inactive_needs_export(nf, i_timeout, jiffies)) | 
