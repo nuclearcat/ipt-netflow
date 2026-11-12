@@ -3968,8 +3968,12 @@ static u64 get_sys_init_time_ms(void)
 {
 	static u64 sys_init_time = 0;
 
-	if (!sys_init_time)
-		sys_init_time = ktime_to_ms(ktime_get_real()) - jiffies_to_msecs(jiffies);
+	if (!sys_init_time) {
+		u64 uptime_ms = (get_jiffies_64() - INITIAL_JIFFIES) * MSEC_PER_SEC;
+
+		do_div(uptime_ms, HZ);
+		sys_init_time = ktime_to_ms(ktime_get_real()) - uptime_ms;
+	}
 	return sys_init_time;
 }
 

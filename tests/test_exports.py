@@ -32,6 +32,7 @@ prefix = r'''
 #include <stddef.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
@@ -48,6 +49,14 @@ typedef int64_t s64;
 #define PAD_SIZE 4
 #define NETFLOW5_RECORDS_MAX 30
 #define NETFLOW5_HEADER_SIZE (sizeof(struct netflow5_pdu)-30*sizeof(struct netflow5_record))
+#define HZ 100
+#define INITIAL_JIFFIES ((unsigned long)(unsigned int)(-300 * HZ))
+static uint64_t uptime_ms;
+#define ktime_to_ms(x) (x)
+#define ktime_get_real() (1700000000000ULL+uptime_ms)
+#define get_jiffies_64() ((uint64_t)INITIAL_JIFFIES+uptime_ms*HZ/1000)
+#define MSEC_PER_SEC 1000
+#define do_div(n,base) ((n)/=(base))
 static int debug;
 static unsigned long jiffies=1000;
 static unsigned engine_id=3;
@@ -62,7 +71,11 @@ static void *skb_header_pointer(const struct sk_buff *skb,unsigned off,unsigned 
 }
 '''
 main = r'''
-int main(void) {
+int main(int argc,char **argv) {
+ uptime_ms=strtoull(argv[1],NULL,10);
+ assert(get_sys_init_time_ms()==1700000000000ULL);
+ uptime_ms+=1000;
+ assert(get_sys_init_time_ms()==1700000000000ULL);
  for(int version=9;version<=10;version++) {
   size_t total=version==9?sizeof(pdu.v9):sizeof(pdu.ipfix);
   unsigned char *data=version==9?pdu.v9.data:pdu.ipfix.data;
@@ -109,12 +122,14 @@ code = (prefix + structs + globals_code + '\n' + spi + '\n' +
         function('pdu_have_space') + '\n' + function('pdu_grab_space') + '\n' +
         '\n'.join(function(name) for name in ('netflow_export_pdu_v5',
                                              'netflow_export_pdu_v9',
-                                             'netflow_export_pdu_ipfix')) +
+                                             'netflow_export_pdu_ipfix',
+                                             'get_sys_init_time_ms')) +
         '\n' + source[metric_start:metric_end] + source[options_start:options_end] + main)
 with tempfile.TemporaryDirectory(prefix='ipt-netflow-test-') as tmp:
     work = Path(tmp)
     (work / 'exports.c').write_text(code)
     subprocess.run(['gcc', '-g', '-O1', '-fsanitize=address,undefined',
                     str(work / 'exports.c'), '-o', str(work / 'test')], check=True)
-    subprocess.run([str(work / 'test')], check=True,
-                   env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))
+    for uptime in (0, 1000, 300000, 100 * 86400000):
+        subprocess.run([str(work / 'test'), str(uptime)], check=True,
+                       env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0'))
