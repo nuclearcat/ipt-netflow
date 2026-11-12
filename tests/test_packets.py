@@ -23,6 +23,7 @@ prefix=r'''
 #include <string.h>
 #include <arpa/inet.h>
 #include <linux/ip.h>
+#include <linux/tcp.h>
 #include <linux/ipv6.h>
 #include <linux/in6.h>
 typedef uint8_t u_int8_t;
@@ -51,6 +52,7 @@ struct parsed { struct ipt_netflow_tuple tuple; int fragment; unsigned ptr; };
 #define SAVE_SPI(tuple,spi) { (tuple).s_port=(spi)>>16; (tuple).d_port=(spi); }
 #define parse_l2_header(s,t) ((void)0)
 #define ip4_options(p,s) 0
+#define tcp_options(s,p,h) 0
 #define observed_hdrs(x) 0
 #define ipv6_optlen(h) (((h)->hdrlen+1)<<3)
 static int ipv6_ext_hdr(unsigned h) { return h==0 || h==43 || h==44 || h==51 || h==60; }
@@ -66,6 +68,7 @@ static struct parsed parse(struct sk_buff *skb,const struct xt_action_param *par
 '''
 suffix=r'''
 do_protocols:
+ TCP_CASE
  return (struct parsed){ .tuple=tuple, .fragment=fragment, .ptr=ptr };
 }
 int main(int argc,char **argv) {
@@ -90,6 +93,28 @@ int main(int argc,char **argv) {
    skb.headlen=linear; got=parse(&skb,&par);
    assert(got.tuple.src.in6.s6_addr[15]==7 && got.ptr==40);
   }
+ } else if(!strcmp(argv[1],"invalid")) {
+  struct iphdr *ip=(void *)skb.data;
+  ip->version=4; ip->protocol=6; skb.len=skb.headlen=40;
+  for(unsigned ihl=0;ihl<5;ihl++) {
+   ip->ihl=ihl;ip->tot_len=htons(40);got=parse(&skb,&par);
+   assert(got.fragment==-1);
+  }
+  ip->ihl=6;ip->tot_len=htons(20);got=parse(&skb,&par);
+  assert(got.fragment==-1);
+  ip->tot_len=htons(24);skb.len=23;got=parse(&skb,&par);
+  assert(got.fragment==-1);
+  ip->ihl=5;
+  struct tcphdr *th=(void *)(skb.data+20);
+  th->source=htons(1234);th->dest=htons(80);th->doff=6;th->syn=1;
+  for(unsigned len=14;len<=20;len++) {
+   skb.len=20+len;ip->tot_len=htons(skb.len);
+   for(unsigned linear=0;linear<=skb.len;linear++) {
+    skb.headlen=linear;got=parse(&skb,&par);
+    assert(got.tuple.s_port==(len==20?htons(1234):0));
+   }
+  }
+  th->doff=4;got=parse(&skb,&par);assert(!got.tuple.s_port);
  } else if(!strcmp(argv[1],"ipv6")) {
   par.family=AF_INET6; skb.len=skb.headlen=64;
   struct ipv6hdr *ip6=(void *)skb.data;
@@ -127,11 +152,13 @@ int main(int argc,char **argv) {
 '''
 expr=re.search(r'nf->flow_label = (.*?);',src,re.S).group(1)
 helper='static unsigned label(const struct ipv6hdr *ip6) { union { struct ipv6hdr ip6; } *iph=(void *)ip6; return '+expr+'; }\n'
+tcp_case=fn[fn.index('\t\t    case IPPROTO_TCP: {'):fn.index('\t\t    case IPPROTO_UDP:')]
+suffix=suffix.replace(' TCP_CASE', ' if (!fragment) switch(tuple.protocol) {\n'+tcp_case+'\n }')
 suffix=suffix.replace('int main(',helper+'int main(')
 name='packet-baseline' if '--baseline' in sys.argv else 'packet-fixed'
 (out/(name+'.c')).write_text(prefix+body+suffix)
 subprocess.run(['gcc','-g','-O1','-fsanitize=address,undefined','-fno-omit-frame-pointer',str(out/(name+'.c')),'-o',str(out/name)],check=True)
-for case in ('header','ah','ipv6'):
+for case in ('header','invalid','ah','ipv6'):
     result=subprocess.run([str(out/name),case],capture_output=True,text=True,env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0'))
     print(case, 'PASS' if result.returncode==0 else 'FAIL',result.stdout,result.stderr[:2500])
     if result.returncode and '--baseline' not in sys.argv: sys.exit(1)

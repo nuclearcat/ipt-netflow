@@ -5048,7 +5048,10 @@ static unsigned int netflow_target(
 #endif
 	    !(iph = skb_header_pointer(skb, 0,
 			    (likely(family == AF_INET))? sizeof(_iph.ip) : sizeof(_iph.ip6),
-			    &_iph)))) {
+			    &_iph)) ||
+	    (family == AF_INET &&
+	     (iph->ip.ihl < 5 || ntohs(iph->ip.tot_len) < iph->ip.ihl * 4 ||
+	      skb->len < iph->ip.ihl * 4)))) {
 		NETFLOW_STAT_INC(truncated);
 		NETFLOW_STAT_INC(pkt_drop);
 		NETFLOW_STAT_ADD(traf_drop, skb->len);
@@ -5172,7 +5175,8 @@ do_protocols:
 		    case IPPROTO_TCP: {
 			struct tcphdr _hdr, *hp;
 
-			if (likely(hp = skb_header_pointer(skb, ptr, 14, &_hdr))) {
+			if (likely(hp = skb_header_pointer(skb, ptr, sizeof(_hdr), &_hdr)) &&
+			    likely(hp->doff >= 5)) {
 				tuple.s_port = hp->source;
 				tuple.d_port = hp->dest;
 				tcp_flags = (u_int8_t)(ntohl(tcp_flag_word(hp)) >> 16);
