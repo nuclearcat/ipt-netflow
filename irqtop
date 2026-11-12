@@ -57,7 +57,7 @@ GetoptLong.new(
     @batch = true
     @reverse = !@reverse if @omode == :top
   when '--delay'
-    @delay = arg.to_i
+    @delay = arg.to_f
   when '--top'
     @omode = :top
   when '--table'
@@ -74,11 +74,10 @@ GetoptLong.new(
     @showrps = !@showrps
   end
 end
-if !@delay && ARGV[0].to_f > 0
-  @delay = ARGV.shift.to_f
-else
-  @delay = 5
+unless @delay
+  @delay = ARGV[0].to_f > 0 ? ARGV.shift.to_f : 5
 end
+abort 'Refresh interval must be a finite number greater than zero' unless @delay.finite? && @delay > 0
 @count = ARGV.shift.to_f if ARGV[0].to_i > 0
 
 def read_table(tag, file)
@@ -294,7 +293,7 @@ def calc_speed
   @t = Hash.new(0) # rate per cpu
   @w = Hash.new(0) # irqs per irqN
   @s = @stats.map do |v, t, i, c, d|
-    rate = (v - h[[t, i, c]]) / @dt
+    rate = @dt > 0 ? (v - h[[t, i, c]]) / @dt : 0.0
     @t[c] += rate if t == 'i'
     @w[[t, i]] += (v - h[[t, i, c]])
     @h[[t, i, c]] = rate
@@ -311,6 +310,7 @@ def calc_cpu
     d = d.zip(@hcstat[c]).map {|a, b| a - b}
     c = c.upcase
     sum = d.reduce(:+)
+    next if sum <= 0
     @cBusy[c] = 100 - (d[3] + d[4]).to_f / sum * 100
     @cHIrq[c] = (d[5]).to_f / sum * 100
     @cSIrq[c] = (d[6]).to_f / sum * 100
