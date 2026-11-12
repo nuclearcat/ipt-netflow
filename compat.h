@@ -648,16 +648,15 @@ out:
 # define timer_setup setup_timer
 #endif
 
+/* The kernel declaration exists even when the symbol is not exported. */
+#define dev_get_alias compat_dev_get_alias
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0)
 static int dev_get_alias(const struct net_device *dev, char *name, size_t len)
 {
 	return snprintf(name, len, "%s", dev->ifalias);
 }
 #else
-/* no static because defined in include/linux/netdevice.h,
- * but forgot to create EXPORT_SYMBOL,
- * probably will collide with some future kernel */
-int dev_get_alias(const struct net_device *dev, char *name, size_t len)
+static int dev_get_alias(const struct net_device *dev, char *name, size_t len)
 {
 	const struct dev_ifalias *alias;
 	int ret = 0;
