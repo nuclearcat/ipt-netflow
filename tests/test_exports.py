@@ -57,6 +57,13 @@ static uint64_t uptime_ms;
 #define get_jiffies_64() ((uint64_t)INITIAL_JIFFIES+uptime_ms*HZ/1000)
 #define MSEC_PER_SEC 1000
 #define do_div(n,base) ((n)/=(base))
+struct ipt_netflow;
+static int protocol;
+static void (*netflow_export_flow)(struct ipt_netflow *);
+static void (*netflow_export_pdu)(void);
+static void netflow_export_flow_v5(struct ipt_netflow *nf) {}
+static void netflow_export_flow_tpl(struct ipt_netflow *nf) {}
+static void free_templates(void) {}
 static int debug;
 static unsigned long jiffies=1000;
 static unsigned engine_id=3;
@@ -115,6 +122,20 @@ int main(int argc,char **argv) {
  assert(tcp_options(&skb,0,&th)==(1U<<31));
  struct {uint16_t s_port,d_port;} tuple={0xffff,0xffff};
  assert(EXTRACT_SPI(tuple)==0xffffffffU);
+ unsigned versions[]={5,9,10,5,10,9,5,5};
+ unsigned expected[]={0,0,0,3,3,1,6,9};
+ memset(pdu_seq,0,sizeof(pdu_seq));
+ for(unsigned i=0;i<sizeof(versions)/sizeof(*versions);i++) {
+  netflow_switch_version(versions[i]);
+  pdu_data_records=3;pdu_packets=7;pdu_traf=1234;
+  if(protocol!=5)pdu_data_used+=8;
+  unsigned count=pdu_count;
+  netflow_export_pdu();
+  unsigned seq=protocol==5?ntohl(((struct netflow5_pdu *)sent)->seq):
+               protocol==9?ntohl(((struct netflow9_pdu *)sent)->seq):
+                           ntohl(((struct ipfix_pdu *)sent)->seq);
+  assert(seq==expected[i] && pdu_count==count+1 && !pdu_packets && !pdu_traf);
+ }
  puts("PDU padding, timestamps, metrics, options and SPI checks passed");
 }
 '''
@@ -123,7 +144,8 @@ code = (prefix + structs + globals_code + '\n' + spi + '\n' +
         '\n'.join(function(name) for name in ('netflow_export_pdu_v5',
                                              'netflow_export_pdu_v9',
                                              'netflow_export_pdu_ipfix',
-                                             'get_sys_init_time_ms')) +
+                                             'get_sys_init_time_ms',
+                                             'netflow_switch_version')) +
         '\n' + source[metric_start:metric_end] + source[options_start:options_end] + main)
 with tempfile.TemporaryDirectory(prefix='ipt-netflow-test-') as tmp:
     work = Path(tmp)

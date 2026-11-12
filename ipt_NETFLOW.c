@@ -312,7 +312,8 @@ static atomic_t ipt_netflow_count = ATOMIC_INIT(0);
 
 static long long pdu_packets = 0, pdu_traf = 0; /* how much accounted traffic in pdu */
 static unsigned int pdu_count = 0;
-static unsigned int pdu_seq = 0;
+/* Each wire protocol has its own cumulative sequence space. */
+static unsigned int pdu_seq[11];
 static unsigned int pdu_data_records = 0; /* Data records */
 static unsigned int pdu_flow_records = 0; /* Data records with flows (for stat only) */
 static unsigned int pdu_tpl_records = 0;
@@ -2723,7 +2724,7 @@ static void netflow_export_pdu_v5(void)
 	do_gettimeofday(&tv);
 	pdu.v5.ts_usecs		= htonl(tv.tv_sec);
 	pdu.v5.ts_unsecs	= htonl(tv.tv_usec * 1000);
-	pdu.v5.seq		= htonl(pdu_seq);
+	pdu.v5.seq		= htonl(pdu_seq[5]);
 	//pdu.v5.eng_type	= 0;
 	pdu.v5.eng_id		= (__u8)engine_id;
 #ifdef ENABLE_SAMPLER
@@ -2736,7 +2737,7 @@ static void netflow_export_pdu_v5(void)
 	pdu_packets = 0;
 	pdu_traf    = 0;
 
-	pdu_seq += pdu_data_records;
+	pdu_seq[5] += pdu_data_records;
 	pdu_count++;
 	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 }
@@ -2817,7 +2818,7 @@ static void netflow_export_pdu_v9(void)
 	pdu.v9.sys_uptime_ms	= htonl(jiffies_to_msecs(jiffies));
 	do_gettimeofday(&tv);
 	pdu.v9.export_time_s	= htonl(tv.tv_sec);
-	pdu.v9.seq		= htonl(pdu_seq);
+	pdu.v9.seq		= htonl(pdu_seq[9]);
 	pdu.v9.source_id	= htonl(engine_id);
 
 	pdusize = pdu_data_used - (unsigned char *)&pdu.v9;
@@ -2827,7 +2828,7 @@ static void netflow_export_pdu_v9(void)
 	pdu_packets = 0;
 	pdu_traf    = 0;
 
-	pdu_seq++;
+	pdu_seq[9]++;
 	pdu_count++;
 	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 	pdu_data_used = pdu.v9.data;
@@ -2859,7 +2860,7 @@ static void netflow_export_pdu_ipfix(void)
 	pdu.ipfix.version	= htons(10);
 	do_gettimeofday(&tv);
 	pdu.ipfix.export_time_s	= htonl(tv.tv_sec);
-	pdu.ipfix.seq		= htonl(pdu_seq);
+	pdu.ipfix.seq		= htonl(pdu_seq[10]);
 	pdu.ipfix.odomain_id	= htonl(engine_id);
 	pdusize = pdu_data_used - (unsigned char *)&pdu;
 	pdu.ipfix.length	= htons(pdusize);
@@ -2869,7 +2870,7 @@ static void netflow_export_pdu_ipfix(void)
 	pdu_packets = 0;
 	pdu_traf    = 0;
 
-	pdu_seq += pdu_data_records;
+	pdu_seq[10] += pdu_data_records;
 	pdu_count++;
 	pdu_flow_records = pdu_data_records = pdu_tpl_records = pdu_set_records = 0;
 	pdu_data_used = pdu.ipfix.data;
