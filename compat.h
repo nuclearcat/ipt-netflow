@@ -130,6 +130,9 @@ static inline u32 prandom_u32_max(u32 ep_ro)
 {
 	return (u32)(((u64) prandom_u32() * ep_ro) >> 32);
 }
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0)
+# define prandom_u32 get_random_u32
+# define prandom_u32_max get_random_u32_below
 #endif
 
 #ifndef min_not_zero
