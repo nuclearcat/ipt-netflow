@@ -22,6 +22,11 @@ prefix=r'''
 #include <fcntl.h>
 static char input[100000];
 static size_t input_size;
+static char written[1024];
+static size_t written_size;
+static ssize_t test_write(int fd,const void *buf,size_t len) {
+ assert(len<=sizeof(written));memcpy(written,buf,len);written_size=len;return len;
+}
 static FILE *test_fopen(const char *path,const char *mode) { return fmemopen(input,input_size,"r"); }
 static int test_open(const char *path,int flags,...) { return 42; }
 static ssize_t test_read(int fd,void *buf,size_t len) { if(len>input_size) len=input_size; memcpy(buf,input,len); return len; }
@@ -30,16 +35,35 @@ static int test_close(int fd) { return 0; }
 #define open test_open
 #define read test_read
 #define close test_close
+#define write test_write
 '''
 suffix=r'''
 #undef fopen
 #undef open
 #undef read
 #undef close
+#undef write
 int main(int argc,char **argv) {
  cpu_data_set=netsnmp_create_table_data_set("testcpu");
  sock_data_set=netsnmp_create_table_data_set("testsock");
- if(!strcmp(argv[1],"unsupported")) {
+ if(!strcmp(argv[1],"write")) {
+  netsnmp_variable_list vb={.type=ASN_OCTET_STR};
+  netsnmp_agent_request_info reqinfo={.mode=MODE_SET_ACTION};
+  netsnmp_request_info request={.requestvb=&vb,.agent_req_info=&reqinfo};
+  for(size_t size=0;size<=224;size++) {
+   vb.val.string=size?malloc(size):NULL;vb.val_len=size;
+   if(size)memset(vb.val.string,'x',size);
+   request.status=0;written_size=0;
+   assert(sysctl_write(&request,7)==SNMP_ERR_NOERROR);
+   if(size<=223) {
+    assert(!request.status && written_size==size+1 && written[size]=='\n');
+    for(size_t i=0;i<size;i++)assert(written[i]=='x');
+   } else assert(request.status==SNMP_ERR_WRONGLENGTH && !written_size);
+   free(vb.val.string);
+  }
+  vb.val.string=NULL;vb.val_len=SIZE_MAX;request.status=0;
+  assert(sysctl_write(&request,7)==SNMP_ERR_NOERROR && request.status==SNMP_ERR_WRONGLENGTH);
+ } else if(!strcmp(argv[1],"unsupported")) {
   struct snmp_vars bad[]={{1,ASN_INTEGER,"index"},{2,ASN_NULL,"bad"},{3,ASN_INTEGER,"next"},{0}};
   char row[]="7 8";
   parse_table_row(0,row,bad,cpu_data_set);
@@ -77,7 +101,7 @@ name='snmp-baseline' if baseline else 'snmp-fixed'
 (out/(name+'.c')).write_text(prefix+src+suffix)
 subprocess.run(['gcc','-g','-O1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-I',os.environ.get('NET_SNMP_INCLUDE','/usr/include'),str(out/(name+'.c')),'-o',str(out/name),*shlex.split(os.environ.get('NET_SNMP_LIBS','-lnetsnmpagent -lnetsnmp'))],check=True)
 env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0')
-for case in (['large','longline','unterminated'] if '--row' not in sys.argv else ['unsupported']):
+for case in (['large','longline','unterminated','write'] if '--row' not in sys.argv else ['unsupported']):
  r=subprocess.run([str(out/name),case],env=env,capture_output=True,text=True)
  print(case,'PASS' if r.returncode==0 else 'FAIL',r.stdout,r.stderr[:1600])
  if r.returncode and not baseline: sys.exit(1)

@@ -279,7 +279,12 @@ static int sysctl_write(netsnmp_request_info *request, int obj)
 		snprintf(buf, sizeof(buf), "%lu\n", *(request->requestvb->val.integer));
 		break;
 	case ASN_OCTET_STR:
-		snprintf(buf, sizeof(buf), "%s\n", request->requestvb->val.string);
+		if (request->requestvb->val_len > sizeof(buf) - 2) {
+			netsnmp_request_set_error(request, SNMP_ERR_WRONGLENGTH);
+			return SNMP_ERR_NOERROR;
+		}
+		snprintf(buf, sizeof(buf), "%.*s\n", (int)request->requestvb->val_len,
+		    request->requestvb->val_len ? (char *)request->requestvb->val.string : "");
 		break;
 	default:
 		netsnmp_request_set_error(request, SNMP_ERR_WRONGTYPE);
