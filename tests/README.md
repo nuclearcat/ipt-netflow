@@ -5,13 +5,24 @@ UndefinedBehaviorSanitizer support:
 
 ```sh
 python3 tests/test_packets.py
+python3 tests/test_promisc.py
+python3 tests/test_flows_dump.py
+python3 tests/test_sysctl_strings.py
+python3 tests/test_stats.py
+python3 tests/test_destinations.py
+python3 tests/test_socket_scope.py
 python3 tests/test_aggregation.py
 python3 tests/test_hashtable.py
 python3 tests/test_exports.py
 python3 tests/test_registration.py
 python3 tests/test_snmp.py
 python3 tests/test_snmp.py --row
+ruby tests/test_irqtop.rb
 ```
+
+The irqtop checks require Ruby and its standard GetoptLong library; they extract
+the relevant methods and option parser without loading curses or running the
+interactive monitor.
 
 The SNMP checks additionally require the Net-SNMP development headers and agent
 libraries. `NET_SNMP_INCLUDE` and `NET_SNMP_LIBS` override their include directory
@@ -56,6 +67,49 @@ spinlocks and matched-rule atomic usage counters remain. Removing the reported
 revision and reports its expected failures instead of exiting unsuccessfully.
 The synthetic kernel-service substitutes do not establish network reachability
 or replace live-kernel fault-injection, unloading, or concurrency testing.
+
+## Bug report verification: 2026-11-12
+
+The supplied `BUGS.md` described revision `4c0a0dc`. Each entry was checked
+against that revision before choosing a fix. The table records corrections to
+the report as well as the resulting behavior.
+
+| Entry | Finding and disposition |
+| --- | --- |
+| 1.1 | Invalid IPv4 header lengths are accepted. TCP `doff` itself is inside the copied 14 bytes, but `tcp_flag_word()` reads a four-byte word starting at byte 12. Require a complete fixed TCP header and a valid data offset; validate IPv4 header and total lengths. TCP options already have their own bounded skb read. |
+| 1.2 | A failed VLAN decoder can leave the original depth in use. Reject decode or linearization failures before pulling the skb. |
+| 1.3 | Failed clone allocations can return a list sentinel as a flow. Skip empty snapshots. The existing negative stripe check already protects repeated NULL iteration after EOF; stop seeks at EOF explicitly and preserve 64-bit positions instead of truncating them to int. |
+| 1.4 | Sysctl text can change concurrently with parsing. Serialize reads, writes, parsing and canonicalization, stage new text, retain SNMP rule text on failure, and propagate destination parser errors. |
+| 1.5 | Worker updates use per-CPU access without pinning or exclusion from packet softirqs. Use bottom-half exclusion for process-context counters and timestamps. Preemption exclusion alone would not prevent lost updates from softirqs. |
+| 2.1 | The boot epoch uses wrapped milliseconds and includes INITIAL_JIFFIES. Compute elapsed uptime using the 64-bit tick counter after subtracting INITIAL_JIFFIES. |
+| 2.2 | Protocols share incompatible sequence units. Keep an independent cumulative sequence counter for each protocol, including round trips and repeated same-version writes. The existing forced flush clears pending traffic counters; pdu_count is an internal cumulative packet counter and does not need resetting. |
+| 2.3 | Invalid ports, brackets and trailing text are accepted. Validate whole tokens, bound ports and device names, and stage the complete destination list so parse/allocation failures preserve active collectors. |
+| 2.4 | Collector deduplication omits source bindings. Include source address and device, and explicitly supply the interface scope for IPv6 source bind and destination connect. |
+| 2.5 | The helper has external linkage. There is already a kernel prototype, so a missing-prototype warning is not established. Rename the local implementation and give it private linkage to avoid a competing global symbol. |
+| 3.1 | False positive. Net-SNMP scalar-group registration installs the serialize helper, which passes one request at a time to these handlers. A two-varbind GET through the registered production handler chain answers both values. |
+| 3.2 | SNMP strings need not be NUL-terminated. Bound reads by val_len and reject values too large for the sysctl write buffer. |
+| 3.3 | IRQ, RPS and XPS affinity masks lose lower words at commas. Parse the complete mask. The default assignment also overwrites explicit -d values, so the reported path from -d 0.5 directly to zero delay is inaccurate. Honor fractional delays, reject invalid intervals and handle zero elapsed time or unchanged CPU counters. |
+
+Sequence behavior follows the separate packet and data-record sequence spaces
+in [RFC 3954 section 5.1](https://www.rfc-editor.org/rfc/rfc3954.html#section-5.1)
+and [RFC 7011 section 3.1](https://www.rfc-editor.org/rfc/rfc7011.html#section-3.1).
+The serialization behavior can also be inspected in Net-SNMP's
+[scalar-group registration](https://github.com/net-snmp/net-snmp/blob/master/agent/helpers/scalar_group.c).
+
+All listed regression commands passed, with ASan/UBSan on the C harnesses.
+The SNMP test compiles the complete plugin against Net-SNMP 5.9.4 and includes
+unterminated writes, size boundaries, and a two-varbind GET through its helper
+chain. Compatibility alias checks passed with both pre-4.15 and modern device
+alias declarations. The SNMP shared library compiled and Ruby syntax passed.
+
+The kernel module built against Ubuntu Linux 7.0.0-43 headers with NAT, MAC,
+VLAN, direction, aggregation, promiscuous VLAN/MPLS handling, SNMP rules,
+sampling and randomized template IDs enabled. The hash-sampling build exposed
+an additional existing compatibility failure: Linux 6.1+ removed the old
+prandom APIs. A separate fix maps those calls to current random APIs. Both
+regular and hash-sampling kernel configurations were checked. Build outputs
+and downloaded test dependencies stayed under /tmp; no live module was loaded.
+These checks do not establish live kernel concurrency or network reachability.
 
 ## Production benchmark: 2026-10-25
 

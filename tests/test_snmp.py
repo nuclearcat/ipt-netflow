@@ -46,7 +46,28 @@ suffix=r'''
 int main(int argc,char **argv) {
  cpu_data_set=netsnmp_create_table_data_set("testcpu");
  sock_data_set=netsnmp_create_table_data_set("testsock");
- if(!strcmp(argv[1],"write")) {
+ if(!strcmp(argv[1],"multi")) {
+  oid root[]={1,3,6,1,4,1,37476,9000,10,1,1,1};
+  netsnmp_handler_registration *reg=netsnmp_create_handler_registration(
+   "testModule",iptNetflowModule_handler,root,OID_LENGTH(root),HANDLER_CAN_RONLY);
+  assert(netsnmp_register_scalar_group(reg,1,var_max(modinfos))==MIB_REGISTERED_OK);
+  oid names[][14]={{1,3,6,1,4,1,37476,9000,10,1,1,1,1,0},
+                   {1,3,6,1,4,1,37476,9000,10,1,1,1,2,0}};
+  netsnmp_variable_list *vb[2]={0};
+  netsnmp_agent_request_info reqinfo={.mode=MODE_GET};
+  netsnmp_request_info requests[2]={{0}};
+  input_size=sprintf(input,"test-version\n");
+  for(int i=0;i<2;i++) {
+   snmp_varlist_add_variable(&vb[i],names[i],14,ASN_NULL,NULL,0);
+   requests[i].requestvb=vb[i];requests[i].agent_req_info=&reqinfo;
+  }
+  requests[0].next=&requests[1];requests[1].prev=&requests[0];
+  assert(netsnmp_call_handlers(reg,&reqinfo,requests)==SNMP_ERR_NOERROR);
+  assert(vb[0]->type==ASN_OCTET_STR && vb[1]->type==ASN_OCTET_STR);
+  assert(vb[0]->val_len==strlen(MODINFO_NAME) && !memcmp(vb[0]->val.string,MODINFO_NAME,vb[0]->val_len));
+  assert(vb[1]->val_len==12 && !memcmp(vb[1]->val.string,"test-version",12));
+  for(int i=0;i<2;i++)snmp_free_varbind(vb[i]);
+ } else if(!strcmp(argv[1],"write")) {
   netsnmp_variable_list vb={.type=ASN_OCTET_STR};
   netsnmp_agent_request_info reqinfo={.mode=MODE_SET_ACTION};
   netsnmp_request_info request={.requestvb=&vb,.agent_req_info=&reqinfo};
@@ -101,7 +122,7 @@ name='snmp-baseline' if baseline else 'snmp-fixed'
 (out/(name+'.c')).write_text(prefix+src+suffix)
 subprocess.run(['gcc','-g','-O1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-I',os.environ.get('NET_SNMP_INCLUDE','/usr/include'),str(out/(name+'.c')),'-o',str(out/name),*shlex.split(os.environ.get('NET_SNMP_LIBS','-lnetsnmpagent -lnetsnmp'))],check=True)
 env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0')
-for case in (['large','longline','unterminated','write'] if '--row' not in sys.argv else ['unsupported']):
+for case in (['large','longline','unterminated','write','multi'] if '--row' not in sys.argv else ['unsupported']):
  r=subprocess.run([str(out/name),case],env=env,capture_output=True,text=True)
  print(case,'PASS' if r.returncode==0 else 'FAIL',r.stdout,r.stderr[:1600])
  if r.returncode and not baseline: sys.exit(1)
