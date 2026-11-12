@@ -111,7 +111,7 @@ def read_affinity
   @aff = {}
   Dir.glob("/proc/irq/*/smp_affinity").each do |af|
     irq = af[%r{\d+}].to_i
-    a = IO.read(af).strip.to_i(16)
+    a = IO.read(af).delete(',').strip.to_i(16)
     @aff[irq] = a
   end
 end
@@ -140,8 +140,8 @@ def get_rps(desc)
   qnr = desc[/-(\d+)\s*$/, 1]
   return unless qnr
   begin
-    @rps = IO.read("/sys/class/net/#{dev}/queues/rx-#{qnr}/rps_cpus").hex if desc =~ /rx/i
-    @xps = IO.read("/sys/class/net/#{dev}/queues/tx-#{qnr}/xps_cpus").hex if desc =~ /tx/i
+    @rps = IO.read("/sys/class/net/#{dev}/queues/rx-#{qnr}/rps_cpus").delete(',').hex if desc =~ /rx/i
+    @xps = IO.read("/sys/class/net/#{dev}/queues/tx-#{qnr}/xps_cpus").delete(',').hex if desc =~ /tx/i
   rescue
   end
 end
