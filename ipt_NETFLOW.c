@@ -1444,6 +1444,8 @@ static int promisc_rcv(struct sk_buff *skb, struct net_device *dev, struct packe
 
 		skb_push(skb, skb->data - skb_mac_header(skb));
 		skb->protocol = __skb_network_protocol(skb, &vlan_depth);
+		if (!skb->protocol || !pskb_may_pull(skb, vlan_depth))
+			goto drop;
 		skb_pull(skb, vlan_depth);
 
 		skb_reset_network_header(skb);
