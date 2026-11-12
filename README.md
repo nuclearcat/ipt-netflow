@@ -425,8 +425,10 @@ Set one or more collectors. The default port is 2055. Supported forms include:
   and an interface.
 
 Separate entries with commas, spaces, semicolons, tabs, or newlines. Invalid
-entries are logged and skipped while valid entries remain active. A destination
-whose interface does not exist remains unconnected. The complete destination
+entries, missing IPv6 closing brackets, ports outside 1–65535, and interface
+names longer than 15 characters reject the complete update. Parse or allocation
+failures preserve the active destinations. A destination whose interface does
+not exist remains unconnected. The complete destination
 string is limited to 255 characters.
 
 ### `sampler=MODE:N`

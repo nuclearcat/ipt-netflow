@@ -1592,11 +1592,11 @@ static int destination_procctl(PROC_CTL_TABLE *ctl, int write, BEFORE2632(struct
 	ret = proc_dostring(&lctl, write, BEFORE2632(filp,) buffer, lenp, fpos);
 	if (ret >= 0 && write) {
 		pause_scan_worker();
-		destination_removeall();
 		ret = add_destinations(new_buf);
-		if (!ret)
+		if (!ret) {
 			memcpy(destination_buf, new_buf, sizeof(destination_buf));
-		free_templates();
+			free_templates();
+		}
 		cont_scan_worker();
 	}
 	mutex_unlock(&string_config_lock);
@@ -2376,15 +2376,47 @@ static size_t strncount(const char *s, size_t count, int c)
 	return amount;
 }
 
+/* Parse a bounded port, preserving the historical decimal/octal/hex syntax. */
+static int destination_port(const char **end, const char *limit, __be16 *port)
+{
+	const char *p = *end + 1;
+	const char *digits;
+	unsigned int value = 0, base = 10;
+
+	if (p < limit && *p == '0') {
+		base = 8;
+		if (p + 1 < limit && tolower(p[1]) == 'x') {
+			base = 16;
+			p += 2;
+		}
+	}
+	digits = p;
+	for (; p < limit; p++) {
+		int digit = hex_to_bin(*p);
+
+		if (digit < 0 || digit >= base)
+			break;
+		value = value * base + digit;
+		if (value > 65535)
+			return 0;
+	}
+	if (p == digits || !value)
+		return 0;
+	*port = htons(value);
+	*end = p;
+	return 1;
+}
+
 #define SEPARATORS " ,;\t\n"
 static int add_destinations(const char *ptr)
 {
-	int len;
+	LIST_HEAD(pending);
+	struct ipt_netflow_sock *usock;
+	int len, ret = -EINVAL;
 
 	for (; ptr; ptr += len) {
 		struct sockaddr_storage ss;
 		struct sockaddr_storage sbind = {};
-		struct ipt_netflow_sock *usock;
 		const char *end;
 		int succ = 0;
 		char name[IFNAMSIZ] = { 0 };
@@ -2410,11 +2442,15 @@ static int add_destinations(const char *ptr)
 				--clen;
 			}
 			succ = in6_pton(c, clen, (u8 *)&sin6->sin6_addr, -1, &end);
-			if (succ && *ptr == '[' && *end == ']')
-				++end;
+			if (succ && *ptr == '[') {
+				if (end == ptr + len || *end != ']')
+					succ = 0;
+				else
+					++end;
+			}
 			if (succ &&
 			    (*end == ':' || *end == '.' || *end == 'p' || *end == '#'))
-				sin6->sin6_port = htons(simple_strtoul(++end, (char **)&end, 0));
+				succ = destination_port(&end, ptr + len, &sin6->sin6_port);
 			if (succ && *end == '@') {
 				++end;
 				sout->sin6_family = AF_INET6;
@@ -2429,7 +2465,7 @@ static int add_destinations(const char *ptr)
 			sin->sin_port = htons(2055);
 			succ = in4_pton(ptr, len, (u8 *)&sin->sin_addr, -1, &end);
 			if (succ && *end == ':')
-				sin->sin_port = htons(simple_strtoul(++end, (char **)&end, 0));
+				succ = destination_port(&end, ptr + len, &sin->sin_port);
 			if (succ && *end == '@') {
 				++end;
 				sout->sin_family = AF_INET;
@@ -2439,26 +2475,46 @@ static int add_destinations(const char *ptr)
 		}
 		if (succ && *end == '%') {
 			++end;
-			snprintf(name, sizeof(name), "%.*s", (int)strcspn(end, SEPARATORS), end);
+			if (ptr + len - end == 0 || ptr + len - end >= sizeof(name))
+				succ = 0;
+			else {
+				memcpy(name, end, ptr + len - end);
+				end = ptr + len;
+			}
 		}
-		if (!succ) {
+		if (!succ || end != ptr + len) {
 			printk(KERN_ERR "ipt_NETFLOW: can't parse destination: %.*s\n",
 			    len, ptr);
-			continue;
+			goto fail;
 		}
 
 		if (!(usock = vmalloc(sizeof(*usock)))) {
 			printk(KERN_ERR "ipt_NETFLOW: can't vmalloc socket\n");
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto fail;
 		}
 		memset(usock, 0, sizeof(*usock));
 		usock->addr  = ss;
 		usock->saddr = sbind;
 		memcpy(usock->sdev, name, sizeof(usock->sdev));
+		list_add_tail(&usock->list, &pending);
+	}
+	/* Publish only after every token and allocation has succeeded. */
+	destination_removeall();
+	while (!list_empty(&pending)) {
+		usock = list_first_entry(&pending, struct ipt_netflow_sock, list);
+		list_del(&usock->list);
 		usock_connect(usock, 0);
 		add_usock(usock);
 	}
 	return 0;
+fail:
+	while (!list_empty(&pending)) {
+		usock = list_first_entry(&pending, struct ipt_netflow_sock, list);
+		list_del(&usock->list);
+		vfree(usock);
+	}
+	return ret;
 }
 
 #ifdef ENABLE_AGGR
