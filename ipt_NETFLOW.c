@@ -1974,7 +1974,7 @@ static void netflow_sk_error_report(struct sock *sk)
 	usock = sk->sk_user_data;
 	if (usock)
 		usock->err_cberr++;
-	NETFLOW_STAT_INC(sock_cberr);
+	NETFLOW_STAT_INC_ATOMIC(sock_cberr);
 	/* It's theoretically possible to determine to which datagram this reply is,
 	 * because ICMP message frequently includes header of erroneous packet, but
 	 * this is not that reliable - packets could be spoofed, and requires keeping
@@ -2092,7 +2092,7 @@ static void netflow_sendmsg(void *buffer, const int len)
 		if (!usock->sock)
 			usock_connect(usock, 1);
 		if (!usock->sock) {
-			NETFLOW_STAT_INC(send_failed);
+			NETFLOW_STAT_INC_ATOMIC(send_failed);
 			usock->pkt_fail++;
 			continue;
 		}
@@ -2106,7 +2106,7 @@ static void netflow_sendmsg(void *buffer, const int len)
 		if (ret < 0) {
 			char *suggestion = "";
 
-			NETFLOW_STAT_INC(send_failed);
+			NETFLOW_STAT_INC_ATOMIC(send_failed);
 			usock->pkt_fail++;
 			if (ret == -EAGAIN) {
 				usock->err_full++;
@@ -2131,8 +2131,8 @@ static void netflow_sendmsg(void *buffer, const int len)
 			unsigned int wmem = compat_refcount_read(&usock->sock->sk->sk_wmem_alloc);
 			if (wmem > atomic_read(&usock->wmem_peak))
 				atomic_set(&usock->wmem_peak, wmem);
-			NETFLOW_STAT_INC(exported_pkt);
-			NETFLOW_STAT_ADD(exported_traf, ret);
+			NETFLOW_STAT_INC_ATOMIC(exported_pkt);
+			NETFLOW_STAT_ADD_ATOMIC(exported_traf, ret);
 			usock->pkt_sent++;
 			retok++;
 		}
@@ -2141,12 +2141,12 @@ static void netflow_sendmsg(void *buffer, const int len)
 	mutex_unlock(&sock_lock);
 	if (retok == 0) {
 		/* not least one send succeeded, account stat for dropped packets */
-		NETFLOW_STAT_ADD(pkt_lost, pdu_packets);
-		NETFLOW_STAT_ADD(traf_lost, pdu_traf);
-		NETFLOW_STAT_ADD(flow_lost, pdu_flow_records);
-		NETFLOW_STAT_TS(lost);
+		NETFLOW_STAT_ADD_ATOMIC(pkt_lost, pdu_packets);
+		NETFLOW_STAT_ADD_ATOMIC(traf_lost, pdu_traf);
+		NETFLOW_STAT_ADD_ATOMIC(flow_lost, pdu_flow_records);
+		NETFLOW_STAT_TS_ATOMIC(lost);
 	} else {
-		NETFLOW_STAT_ADD(exported_flow, pdu_flow_records);
+		NETFLOW_STAT_ADD_ATOMIC(exported_flow, pdu_flow_records);
 	}
 }
 
@@ -3935,10 +3935,10 @@ ready:
 #endif
 	ptr = alloc_record_key(tpl_mask, &tpl);
 	if (unlikely(!ptr)) {
-		NETFLOW_STAT_ADD(pkt_lost, nf->nr_packets);
-		NETFLOW_STAT_ADD(traf_lost, nf->nr_bytes);
-		NETFLOW_STAT_INC(flow_lost);
-		NETFLOW_STAT_TS(lost);
+		NETFLOW_STAT_ADD_ATOMIC(pkt_lost, nf->nr_packets);
+		NETFLOW_STAT_ADD_ATOMIC(traf_lost, nf->nr_bytes);
+		NETFLOW_STAT_INC_ATOMIC(flow_lost);
+		NETFLOW_STAT_TS_ATOMIC(lost);
 		ipt_netflow_free(nf);
 		return;
 	}
@@ -4538,8 +4538,8 @@ static int netflow_scan_and_export(const int flush)
 #endif
 	set_jiffies_base();
 	list_for_each_entry_safe(nf, tmp, &export_list, flows_list) {
-		NETFLOW_STAT_ADD(pkt_out, nf->nr_packets);
-		NETFLOW_STAT_ADD(traf_out, nf->nr_bytes);
+		NETFLOW_STAT_ADD_ATOMIC(pkt_out, nf->nr_packets);
+		NETFLOW_STAT_ADD_ATOMIC(traf_out, nf->nr_bytes);
 		list_del(&nf->flows_list);
 #ifdef ENABLE_SAMPLER
 		if (mode) {

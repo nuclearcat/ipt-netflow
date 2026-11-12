@@ -430,19 +430,26 @@ struct netflow_aggr_p {
 		__get_cpu_var(ipt_netflow_stat).count.last = kts;		 \
 	} while (0);
 
+/* Process-context updates must exclude packet softirqs as well as migration. */
 #define NETFLOW_STAT_INC_ATOMIC(count)				\
 	do {							\
-		preempt_disable();				\
+		local_bh_disable();				\
 		(__get_cpu_var(ipt_netflow_stat).count++);	\
-		preempt_enable();				\
+		local_bh_enable();				\
 	} while (0);
 
 #define NETFLOW_STAT_ADD_ATOMIC(count, val)			\
 	do {							\
-		preempt_disable();				\
+		local_bh_disable();				\
 		(__get_cpu_var(ipt_netflow_stat).count += (unsigned long long)val); \
-		preempt_enable();				\
+		local_bh_enable();				\
 	} while (0);
+#define NETFLOW_STAT_TS_ATOMIC(count)				\
+	do {							\
+		local_bh_disable();				\
+		NETFLOW_STAT_TS(count);				\
+		local_bh_enable();				\
+	} while (0)
 #define NETFLOW_STAT_READ(count) ({					\
 		unsigned int _tmp = 0, _cpu;				\
 		for_each_present_cpu(_cpu)				\
